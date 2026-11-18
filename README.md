@@ -1,78 +1,36 @@
 # Home Assistant Energy Sankey Cards
 
-[![GitHub Release][releases-shield]][releases]
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
-[![License][license-shield]](LICENSE.md)
-
 Energy Sankey is a collection of dashboard cards for homeassistant, dynamically displaying the flow of electrical energy and power.
 
-![video of animated sankey](video.gif)
+This project is a Fork from the original https://github.com/davet2001/energy-sankey, it's not available in HACS, if you want to use it you have to manually install it by copying energy-sankey.js from the releases section into your Home Assistant /config/www folder and add it under the Resources section (three dots) of the Dashboards configuration in Home Assistant.
 
-The cards are ideal if you want to track your electricity consumption and identify where your energy is going.
 
-The aim is for as easy setup as possible. No configuring groups of child entities, complicated choices or hunting for info to populate a yaml configuration. In most cases, the default configuration should just work.
+It has been modified with the following changes:
 
-There are two main cards:
+## Power card:
 
-- a card showing the total _energy_ flow based on a configurable\* time range (e.g. day so far).
-- a user configurable card showing the _power_ flow for a set of sensors. This represents the live power flow at the current moment.
+- Icons: grid_icon, generation_icon, untracked_icon, unknown_source_icon, and an icon on each consumer and battery is now configurable.
+- Colors: grid_color, generation_color, unknown_source_color, and a color on each consumer and battery is now configurable.
+- Outlines: grid_outline, generation_outline, and an outline on each entity draw a rounded border around that label is now an option.
+- Values above the icon: grid_secondary_entity and generation_secondary_entity show any entity's formatted state above that icon as an option.
+- Battery level: soc_entity on each battery shows a percentage, and the icon changes with the SoC.
+- hide_zero_consumers: hides consumers at 0 W, negative or unavailable.
+- show_total_consumption: shows total consumption above the central trunk.
+- max_power: fixes the scale, so lower power draws thinner lines. The card keeps a constant height.
+- Net values for grid and batteries: the power card now shows a single net value with a direction arrow, instead of separate in and out values.
 
-Both cards base their configuration on the existing home assistant energy configuration, and use the same colour scheme.
+## Both cards:
 
-Both are live and automatically updating. The cards try to display a coherent representation even if the data set is incomplete or physically impossible (e.g. exporting more than generation + batteries are outputting). This means it is ok for asynchronous updates to be made to any of the entities the card is monitoring, and they can have different update intervals.
+- battery_charge_from_generation_first: a new option that assumes batteries charge from generation first and from the grid only for any shortfall.
+- Spacing: cards without a title get 16px of top padding.
 
-The width of the flows represents the amount, and the overall size of everything is automatically scaled so that no one part of the diagram becomes too wide.
+## Renderer and layout
 
-The colour\* of the flows heading to the consumers represents the blend of locally generated vs grid energy.
+- elec-sankey.ts: new props for all of the above. The "unknown source" flow is now gray, themeable via --unknown-source-color. The consumer label column is wider and can be overridden with CSS variables; labels with icons get extra room, and outlines get a taller top strip. Battery and grid labels are now centered.
+- Bug fix: renderGridInFlow was passed x10 where it should have been y10.
+- ha-elec-sankey.ts: label rendering is refactored into _generateLabelBody. Consumers show their icon beside the name, values that round to zero use the neutral text color, value colors follow the configured flow colors, and the total is formatted for the locale.
 
-The diagram dynamically scales to fit the size of the window it is in (mostly).
+## Editors
 
-## Installation (the easy way)
-
-If you've already installed HACS (https://hacs.xyz/), click this button and then click download!
-
-[![Open your Home Assistant instance and open the energy-sankey repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=davet2001&repository=energy-sankey&category=dashboard)
-
-## Installation via HACS
-
-- Install HACS in your Home Assisstant installation (see https://hacs.xyz/ for detailed instructions)
-- Navigate to HACS within your Home Assistant instance (Menu > HACS)
-- In the search box type 'Energy Sankey'
-- Click on **Energy Sankey Card**
-- Click Download
-- Reload when prompted
-- Select a dashboard and enter editing mode
-- Type 'Sankey' in the search box
-- Select 'Sankey Energy Flow Card' or 'Sankey Power Flow Card'
-  - The energy card does not require configuration
-  - The power card auto configures. If there are any problems with autoconfiguration, use built in card editor to select the correct power entities for grid input / generation / consumers / batteries.
-
-## Language Translations
-
-If you would like to see this card translated into your own language, your contribution is most welcome!
-
-It's not too difficult to do; it can be done via a web browser.
-Examples of how others have done it are in recent pull requests e.g. [#121](https://github.com/davet2001/energy-sankey/pull/121), [#138](https://github.com/davet2001/energy-sankey/pull/138).
-
-In short the process is:
-
-- Open the most recent [primary language file](https://github.com/davet2001/energy-sankey/blob/main/src/translations/en.json) `en.json`.
-- Copy the contents to the clipboard
-- Navigate to the `translations/` parent directory by clicking 'translations'.
-- Click 'Add file' to create a new file e.g. `de.json`
-- Paste in the contents
-- Translate to the new language
-- Save the file in a new branch
-- Create a pull request for this branch
-- (To do the complete job...) Within the branch, edit `src/localize.ts` and uncomment the new language.
-- Thank you so much for your contributions!
-
-## Outstanding issues to solve:
-
-- [ ] Sometimes there are thin dark lines between the blocks that make up the shapes, I believe this is caused by antialiasing, but I don't see an easy way of reducing/eliminating it, especially where the shapes are across two divs.
-- [ ] There are probably more edge cases to experiment with, such as multiple generation sources, grid configured with only input or output, and either of those being negative to represent flow in the opposite direction.
-- [ ] \*Configurable time range is not yet implemented
-
-[license-shield]: https://img.shields.io/github/license/davet2001/homeassistant-energy-sankey-card.svg?style=for-the-badge
-[releases-shield]: https://img.shields.io/github/release/davet2001/homeassistant-energy-sankey-card?style=for-the-badge
-[releases]: https://github.com/davet2001/homeassistant-energy-sankey-card/releases
+- The row editor (hui-entities-card-row-editor.ts) can now show name, icon, battery-level, color and outline fields on each row.
+- The power card editor exposes all the new options, and empty optional fields are removed from the config when cleared.
