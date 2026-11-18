@@ -11,7 +11,9 @@ import {
 import { mdiSolarPower } from "@mdi/js";
 import { customElement, property, state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
-import { ElecRoute, ElecRoutePair } from "../../elec-sankey";
+import { styleMap } from "lit/directives/style-map.js";
+import { isTemplate, TemplateSubscriber } from "../../utils/templates";
+import { ElecRoute, ElecRoutePair, LabelTopValue } from "../../elec-sankey";
 import { applyThemesOnElement } from "../../ha/common/dom/apply_themes_on_element";
 import { computeStateName } from "../../ha/common/entity/compute_state_name";
 import type { HomeAssistant } from "../../ha/types";
@@ -48,6 +50,7 @@ const DEFAULT_CONFIG: PowerFlowCardConfig = {
   power_to_grid_entity: undefined,
   invert_battery_flows: false,
   hide_small_consumers: false,
+  hide_zero_consumers: false,
   max_consumer_branches: 0,
   independent_grid_in_out: false,
 };
@@ -119,6 +122,32 @@ function computePower(stateObj: HassEntity): number {
   }
 }
 
+/**
+ * Formatted state of an entity for display above an icon, or undefined if
+ * no entity is configured or it doesn't exist (so nothing is shown).
+ */
+function secondaryValue(
+  hass: HomeAssistant,
+  entityId: string | undefined
+): LabelTopValue | undefined {
+  if (!entityId) {
+    return undefined;
+  }
+  const stateObj = hass.states[entityId];
+  if (!stateObj) {
+    return undefined;
+  }
+  // formatEntityState applies HA's own units, rounding and translations.
+  const text = hass.formatEntityState
+    ? hass.formatEntityState(stateObj)
+    : `${stateObj.state}${
+        stateObj.attributes.unit_of_measurement
+          ? ` ${stateObj.attributes.unit_of_measurement}`
+          : ""
+      }`;
+  return { value: text, id: entityId };
+}
+
 function htmlHuiWarning(hass: HomeAssistant, entity: string): TemplateResult {
   /**
    * Returns a not found warning for the given entity name.
@@ -131,6 +160,57 @@ function htmlHuiWarning(hass: HomeAssistant, entity: string): TemplateResult {
 @customElement(POWER_CARD_NAME)
 export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
   @state() protected _config?: PowerFlowCardConfig;
+
+  /** Bumped whenever a colour template renders a new value. */
+  @state() private _templateVersion = 0;
+
+  private _templates = new TemplateSubscriber(() => {
+    this._templateVersion++;
+  });
+
+  public connectedCallback(): void {
+    super.connectedCallback();
+    this._syncTemplates();
+  }
+
+  public disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._templates.clear();
+  }
+
+  /** All colour settings in the config (literal colours or templates). */
+  private _colorSettings(): (string | undefined)[] {
+    const config = this._config;
+    if (!config) {
+      return [];
+    }
+    return [
+      config.grid_color,
+      config.generation_color,
+      config.unknown_source_color,
+      ...(config.consumer_entities || []).map((e) => e.color),
+      ...(config.battery_entities || []).map((e) => e.color),
+    ];
+  }
+
+  /** Subscribes to the colour templates in the config, dropping old ones. */
+  private _syncTemplates(): void {
+    if (!this.hass || !this._config || !this.isConnected) {
+      return;
+    }
+    this._templates.sync(this.hass, this._colorSettings().filter(isTemplate));
+  }
+
+  /**
+   * Resolves a colour setting: templates give their latest rendered value
+   * (undefined until rendered or if empty), literals are used as given.
+   */
+  private _resolveColor(value: string | undefined): string | undefined {
+    if (!value) {
+      return undefined;
+    }
+    return isTemplate(value) ? this._templates.results[value] : value;
+  }
 
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
     await import("./power-flow-card-editor");
@@ -292,7 +372,10 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
             extEntities
           );
           if (batteryEntity) {
-            returnConfig.battery_entities.push({ entity: batteryEntity });
+            returnConfig.battery_entities = [
+              ...(returnConfig.battery_entities || []),
+              { entity: batteryEntity },
+            ];
           }
           break;
       }
@@ -362,6 +445,9 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
         id: config.power_from_grid_entity,
         text: name,
         rate: computePower(stateObj),
+        icon: config.grid_icon,
+        topValue: secondaryValue(this.hass, config.grid_secondary_entity),
+        outline: config.grid_outline,
       };
     }
 
@@ -375,6 +461,9 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
         id: config.power_to_grid_entity,
         text: computeStateName(stateObj),
         rate: computePower(stateObj),
+        icon: config.grid_icon,
+        topValue: secondaryValue(this.hass, config.grid_secondary_entity),
+        outline: config.grid_outline,
       };
     }
 
@@ -391,7 +480,12 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
         id: entity,
         text: computeStateName(stateObj),
         rate: computePower(stateObj),
-        icon: mdiSolarPower,
+        icon: config.generation_icon || mdiSolarPower,
+        topValue: secondaryValue(
+          this.hass,
+          config.generation_secondary_entity
+        ),
+        outline: config.generation_outline,
       };
     }
 
@@ -403,6 +497,13 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
         if (!stateObj) {
           return htmlHuiWarning(this.hass, entity.entity);
         }
+        const rate = computePower(stateObj);
+        // `!(rate > 0)` also catches NaN (e.g. "unavailable"/"unknown").
+        // Skipped consumers don't count towards the tracked total, so they
+        // are treated as 0 W rather than reducing it.
+        if (config.hide_zero_consumers && !(rate > 0)) {
+          continue;
+        }
         let name = entity.name;
         if (!name) {
           name = computeStateName(stateObj);
@@ -410,7 +511,10 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
         consumerRoutes[entity.entity] = {
           id: entity.entity,
           text: name,
-          rate: computePower(stateObj),
+          rate,
+          icon: entity.icon,
+          color: this._resolveColor(entity.color),
+          outline: entity.outline,
         };
       }
     }
@@ -430,11 +534,23 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
         // (i.e. out of the battery)
         let powerIn =
           (config.invert_battery_flows ? -1 : 1) * computePower(stateObj);
+        // Optional state of charge. Missing, unavailable or non-numeric
+        // states just hide the percentage rather than showing a warning.
+        let soc: number | undefined;
+        if (entity.soc_entity) {
+          const socState = Number(this.hass.states[entity.soc_entity]?.state);
+          soc = isNaN(socState) ? undefined : socState;
+        }
         batteryRoutes[entity.entity] = {
+          color: this._resolveColor(entity.color),
+          outline: entity.outline,
+          soc,
+          socId: soc !== undefined ? entity.soc_entity : undefined,
           in: {
             id: entity.entity,
             text: name,
             rate: powerIn > 0 ? powerIn : 0,
+            icon: entity.icon,
           },
           out: {
             id: "null",
@@ -477,6 +593,31 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
       : 0;
     const batteryChargeOnlyFromGeneration =
       this._config.battery_charge_only_from_generation || false;
+    const batteryChargeFromGenerationFirst =
+      this._config.battery_charge_from_generation_first || false;
+
+    // Grid, generation and battery colours are applied as the renderer's
+    // colour variables, so flows, blends and values all follow them. The
+    // shared battery flow uses the first battery that has a colour.
+    const colorVars: Record<string, string> = {};
+    const gridColor = this._resolveColor(config.grid_color);
+    const generationColor = this._resolveColor(config.generation_color);
+    const batteryColor = Object.values(batteryRoutes).find(
+      (b) => b.color
+    )?.color;
+    if (gridColor) {
+      colorVars["--grid-in-color"] = gridColor;
+    }
+    if (generationColor) {
+      colorVars["--generation-color"] = generationColor;
+    }
+    const unknownSourceColor = this._resolveColor(config.unknown_source_color);
+    if (unknownSourceColor) {
+      colorVars["--unknown-source-color"] = unknownSourceColor;
+    }
+    if (batteryColor) {
+      colorVars["--batt-in-color"] = batteryColor;
+    }
 
     return html`
       <ha-card>
@@ -489,6 +630,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
           })}"
         >
           <ha-elec-sankey
+            style=${styleMap(colorVars)}
             .hass=${this.hass}
             .unit=${"W"}
             .gridInRoute=${gridInRoute || undefined}
@@ -499,6 +641,12 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
             .maxConsumerBranches=${maxConsumerBranches}
             .hideConsumersBelow=${hideConsumersBelow}
             .batteryChargeOnlyFromGeneration=${batteryChargeOnlyFromGeneration}
+            .batteryChargeFromGenerationFirst=${batteryChargeFromGenerationFirst}
+            .untrackedIcon=${this._config.untracked_icon}
+            .unknownSourceIcon=${this._config.unknown_source_icon}
+            .netBidirectionalValues=${true}
+            .maxRate=${this._config.max_power}
+            .showConsumptionTotal=${!!this._config.show_total_consumption}
           ></ha-elec-sankey>
         </div>
       </ha-card>
@@ -506,7 +654,14 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
   }
 
   protected shouldUpdate(changedProps: PropertyValues): boolean {
+    // Keep template subscriptions in step with the config. Done here because
+    // this runs on every property change, even when nothing re-renders.
+    this._syncTemplates();
+
     if (hasConfigChanged(this, changedProps)) {
+      return true;
+    }
+    if (changedProps.has("_templateVersion")) {
       return true;
     }
 
@@ -522,7 +677,10 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
         this._config.power_to_grid_entity,
         ...(this._config.generation_entities || []),
         ...(this._config.consumer_entities.map((a) => a.entity) || []),
-        ...(this._config.battery_entities.map((a) => a.entity) || []),
+        ...(this._config.battery_entities || []).map((a) => a.entity),
+        ...(this._config.battery_entities || []).map((a) => a.soc_entity),
+        this._config.grid_secondary_entity,
+        this._config.generation_secondary_entity,
       ]) {
         if (id) {
           const oldState = oldHass.states[id] as HassEntity | undefined;
@@ -566,6 +724,10 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
         flex-direction: column;
         box-sizing: border-box;
         padding-bottom: 16px;
+      }
+      /* Without a title the diagram would touch the top edge of the card. */
+      .content:not(.has-header) {
+        padding-top: 16px;
       }
       ha-elec-sankey {
         --generation-color: var(--energy-solar-color);

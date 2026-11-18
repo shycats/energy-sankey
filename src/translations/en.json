@@ -25,15 +25,36 @@
         "power_to_grid_entity": "Power to grid (optional)",
         "generation_entity": "Power from generation (optional)",
         "hide_small_consumers": "Group consumers below 20W",
+        "hide_zero_consumers": "Hide consumers at 0W or below",
+        "show_total_consumption": "Show total consumption above the diagram's center",
+        "max_power": "Power at full line thickness (optional, W)",
         "invert_battery_flows": "Battery flows are positive for charging",
         "battery_charge_only_from_generation": "Batteries can only charge from generated power",
+        "battery_charge_from_generation_first": "Batteries charge from generated power first",
         "battery_hint_std": "Power from battery (one combined in/out per battery, positive = discharging)",
         "battery_hint_inverted": "Power to battery (one combined in/out per battery, positive = charging)",
-        "independent_grid_in_out": "Use separate sensors for grid in/out"
+        "independent_grid_in_out": "Use separate sensors for grid in/out",
+        "consumer_name": "Custom label (optional)",
+        "grid_icon": "Grid icon (optional)",
+        "generation_icon": "Generation icon (optional)",
+        "untracked_icon": "Untracked power icon (optional)",
+        "unknown_source_icon": "Unknown generation icon (optional)",
+        "unknown_source_color": "Unknown generation color: CSS color or template (optional)",
+        "grid_secondary_entity": "Value shown above the grid icon (optional)",
+        "generation_secondary_entity": "Value shown above the generation icon (optional)",
+        "grid_color": "Grid color: CSS color or template (optional)",
+        "generation_color": "Generation color: CSS color or template (optional)",
+        "entity_color": "Color: CSS color or template (optional)",
+        "grid_outline": "Outline around the grid label",
+        "generation_outline": "Outline around the generation label",
+        "entity_outline": "Outline around the label",
+        "entity_icon": "Icon (optional)",
+        "battery_soc": "Battery level sensor (optional)"
       },
       "energy_sankey": {
         "hide_small_consumers": "Group consumers below 0.1kWh",
-        "battery_charge_only_from_generation": "Batteries can only charge from generated energy"
+        "battery_charge_only_from_generation": "Batteries can only charge from generated energy",
+        "battery_charge_from_generation_first": "Batteries charge from generated energy first"
       }
     }
   }

@@ -15,6 +15,7 @@ import {
   mdiBattery,
 } from "@mdi/js";
 import { customElement, property } from "lit/decorators.js";
+import { batteryLevelIcon } from "./utils/battery-icon";
 
 /**
  * Notes on graphical layout:
@@ -79,12 +80,52 @@ export interface ElecRoute {
   id?: string;
   text?: string;
   rate: number;
+  /**
+   * Either raw SVG path data (e.g. from @mdi/js) or an icon name such as
+   * "mdi:solar-power". Icon names can only be resolved by subclasses that
+   * have access to an icon registry (see HaElecSankey); the base class
+   * ignores them.
+   */
   icon?: string;
+  /** Optional extra value shown above the route's icon. */
+  topValue?: LabelTopValue;
+  /**
+   * Consumers only: CSS colour for this consumer's branch and value,
+   * replacing the blended source colour.
+   */
+  color?: string;
+  /** Draw a rounded outline around this route's label. */
+  outline?: boolean;
+}
+
+/** True if `icon` is an icon name ("prefix:name") rather than SVG path data. */
+export function isIconName(icon: string | undefined): boolean {
+  return !!icon && /^[a-z0-9_-]+:[a-z0-9_-]+$/i.test(icon);
 }
 
 export interface ElecRoutePair {
   in: ElecRoute;
   out: ElecRoute;
+  /** Battery state of charge in percent (0-100), if known. */
+  soc?: number;
+  /** Id of the entity providing `soc` (made clickable by subclasses). */
+  socId?: string;
+  /** CSS colour for this battery's discharge flow and value. */
+  color?: string;
+  /** Draw a rounded outline around this battery's label. */
+  outline?: boolean;
+}
+
+/**
+ * A value shown above a label's icon, e.g. a battery's state of charge or a
+ * user-chosen entity's state. Numbers are formatted by the renderer (with
+ * `unit` appended); strings are shown as given.
+ */
+export interface LabelTopValue {
+  value: number | string;
+  unit?: string;
+  /** Entity id, made clickable (more-info) by subclasses. */
+  id?: string;
 }
 
 function debugPoint(x: number, y: number, label: string): TemplateResult {
@@ -479,7 +520,56 @@ export class ElecSankey extends LitElement {
   @property({ attribute: false })
   public batteryChargeOnlyFromGeneration: boolean = false;
 
+  /**
+   * Assume batteries charge from generation first, and only from the grid for
+   * whatever generation can't cover. Suits DC-coupled batteries behind a
+   * hybrid inverter, where grid import alongside surplus generation is going
+   * to consumers, not batteries. Ignored if batteryChargeOnlyFromGeneration.
+   */
+  @property({ attribute: false })
+  public batteryChargeFromGenerationFirst: boolean = false;
+
+  /**
+   * For bidirectional labels (grid, batteries), show a single net value in
+   * the direction of flow instead of separate in and out values. Suits
+   * instantaneous power, where flow can only go one way at a time. Energy
+   * over a period can legitimately flow both ways, so this defaults to off.
+   * Implemented by HaElecSankey's label rendering.
+   */
+  @property({ attribute: false })
+  public netBidirectionalValues: boolean = false;
+
+  /**
+   * Rate drawn at full trunk width. Below it the scale is fixed, so smaller
+   * rates draw thinner lines; above it (or when unset) the diagram scales
+   * automatically so the widest trunk is always full width.
+   */
+  @property({ attribute: false })
+  public maxRate?: number;
+
+  /** Show the total consumption above the converging (blended) trunk. */
+  @property({ attribute: false })
+  public showConsumptionTotal: boolean = false;
+
+  /** Total of all consumers incl. untracked; set by _recalculate(). */
+  protected _consumerTotalRate: number = 0;
+
+  /** Optional icon for the untracked ("Untracked"/"Home") consumer. */
+  @property({ attribute: false })
+  public untrackedIcon?: string;
+
+  /**
+   * Icon for the "unknown source" generation shown when generation must be
+   * inferred to balance the diagram. Defaults to a question mark. Its colour
+   * comes from the --unknown-source-color CSS variable (grey by default).
+   */
+  @property({ attribute: false })
+  public unknownSourceIcon?: string;
+
   private _rateToWidthMultplier: number = 0.2;
+
+  /** The multiplier auto-scaling would use, i.e. ignoring maxRate. */
+  private _autoRateToWidthMultiplier: number = 0.2;
 
   private _phantomGridInRoute?: ElecRoute;
 
@@ -661,6 +751,21 @@ export class ElecSankey extends LitElement {
       // at all.
       gridToBatteriesTemp = 0;
       generationToBatteriesTemp = batteriesOutTotal;
+    } else if (this.batteryChargeFromGenerationFirst) {
+      // Generation (less whatever of it is being exported) charges the
+      // batteries first; the grid only makes up any shortfall. Anything the
+      // grid can't cover either is left to the phantom generation below.
+      const generationToGridMin =
+        this._gridExport > batteryInTotal
+          ? this._gridExport - batteryInTotal
+          : 0;
+      const generationAvailable = Math.max(
+        0,
+        generationTrackedTotal - generationToGridMin
+      );
+      const shortfall = Math.max(0, batteriesOutTotal - generationAvailable);
+      gridToBatteriesTemp = Math.min(gridImport, shortfall);
+      generationToBatteriesTemp = batteriesOutTotal - gridToBatteriesTemp;
     } else {
       // Otherwise, we proceed on the basis that the full flow into the battery
       // is coming from the grid (as far as the grid input allows). If there is
@@ -796,7 +901,7 @@ export class ElecSankey extends LitElement {
       phantomGeneration > 0.01
         ? {
             text: "Unknown source",
-            icon: mdiHelpRhombus,
+            icon: this.unknownSourceIcon || mdiHelpRhombus,
             rate: phantomGeneration,
           }
         : undefined;
@@ -809,6 +914,7 @@ export class ElecSankey extends LitElement {
       id: UNTRACKED_ID,
       text: untrackedName,
       rate: untrackedConsumer > 0 ? untrackedConsumer : 0,
+      icon: this.untrackedIcon,
     };
 
     /**
@@ -824,6 +930,7 @@ export class ElecSankey extends LitElement {
     const consumerTotal =
       consumerTrackedTotal +
       (this._untrackedConsumerRoute ? this._untrackedConsumerRoute.rate : 0);
+    this._consumerTotalRate = consumerTotal;
 
     this._batteriesToGridRate = batteriesToGridTemp;
     this._batteriesToConsumersRate = batteriesToConsumersTemp;
@@ -843,7 +950,10 @@ export class ElecSankey extends LitElement {
       batteriesTotal,
       1.0
     );
-    this._rateToWidthMultplier = TARGET_SCALED_TRUNK_WIDTH / widest_trunk;
+    this._autoRateToWidthMultiplier = TARGET_SCALED_TRUNK_WIDTH / widest_trunk;
+    this._rateToWidthMultplier =
+      TARGET_SCALED_TRUNK_WIDTH /
+      Math.max(widest_trunk, this.maxRate && this.maxRate > 0 ? this.maxRate : 0);
   }
 
   private _rateToWidth(rate: number): number {
@@ -906,21 +1016,53 @@ export class ElecSankey extends LitElement {
   }
 
   private _genColor(): string {
-    const computedStyles = getComputedStyle(this);
-    const ret = computedStyles.getPropertyValue("--generation-color").trim();
-    return ret || GEN_COLOR;
+    return this._cssVarAsHex("--generation-color", GEN_COLOR);
   }
 
   private _gridColor(): string {
-    const computedStyles = getComputedStyle(this);
-    const ret = computedStyles.getPropertyValue("--grid-in-color").trim();
-    return ret || GRID_IN_COLOR;
+    return this._cssVarAsHex("--grid-in-color", GRID_IN_COLOR);
   }
 
   private _battColor(): string {
-    const computedStyles = getComputedStyle(this);
-    const ret = computedStyles.getPropertyValue("--batt-in-color").trim();
-    return ret || BATT_IN_COLOR;
+    return this._cssVarAsHex("--batt-in-color", BATT_IN_COLOR);
+  }
+
+  private _hexCache = new Map<string, string>();
+
+  /**
+   * Reads a colour custom property and returns it as #rrggbb. The blending
+   * maths needs hex, but the property may hold any CSS colour (e.g. "red",
+   * "rgb(...)", or a user-configured colour), so non-hex values are resolved
+   * by the browser via a hidden probe element.
+   */
+  private _cssVarAsHex(name: string, fallback: string): string {
+    const value = getComputedStyle(this).getPropertyValue(name).trim();
+    if (!value) {
+      return fallback;
+    }
+    if (/^#[0-9a-f]{6}$/i.test(value)) {
+      return value;
+    }
+    const cached = this._hexCache.get(value);
+    if (cached) {
+      return cached;
+    }
+    const probe = document.createElement("span");
+    probe.style.display = "none";
+    probe.style.color = value;
+    if (!probe.style.color) {
+      return fallback; // Not a valid CSS colour.
+    }
+    const parent = this.renderRoot || document.body;
+    parent.appendChild(probe);
+    const rgb = getComputedStyle(probe).color.match(/\d+(\.\d+)?/g);
+    probe.remove();
+    const hex =
+      rgb && rgb.length >= 3
+        ? rgb2hex(Number(rgb[0]), Number(rgb[1]), Number(rgb[2]))
+        : fallback;
+    this._hexCache.set(value, hex);
+    return hex;
   }
 
   protected _generateLabelDiv(
@@ -932,13 +1074,20 @@ export class ElecSankey extends LitElement {
     _valueAColor: string | undefined = undefined,
     _valueBColor: string | undefined = undefined,
     _displayClass: string | undefined = undefined,
-    _: boolean = true
+    _: boolean = true,
+    topValue: LabelTopValue | undefined = undefined,
+    outline: boolean = false
   ): TemplateResult {
     const valueARounded = Math.round(valueA * 10) / 10;
     const valueBRounded = valueB ? Math.round(valueB * 10) / 10 : undefined;
 
-    return html`<div class="label">
-      ${icon
+    return html`<div class="label ${outline ? "outlined" : ""}">
+      ${topValue
+        ? html`${typeof topValue.value === "number"
+              ? Math.round(topValue.value)
+              : topValue.value}${topValue.unit ?? ""}<br />`
+        : nothing}
+      ${icon && !isIconName(icon)
         ? svg`<svg x="0" y="0" height=${ICON_SIZE_PX}>
               <path d=${icon} />
             </svg>
@@ -950,6 +1099,22 @@ export class ElecSankey extends LitElement {
           `
         : html`${_name}<br />${valueARounded} ${this.unit} `}
     </div> `;
+  }
+
+  /**
+   * Custom icon if set; otherwise a level icon when the state of charge is
+   * known, or a plain charging/idle battery icon when it isn't.
+   */
+  protected _batteryIcon(batt: ElecRoutePair): string {
+    // batt.out is power going into the battery, i.e. charging.
+    const charging = batt.out.rate > 0;
+    if (batt.in.icon) {
+      return batt.in.icon;
+    }
+    if (batt.soc !== undefined) {
+      return batteryLevelIcon(batt.soc, charging);
+    }
+    return charging ? mdiBatteryCharging : mdiBattery;
   }
 
   protected _generationToConsumersRadius(): number {
@@ -995,6 +1160,10 @@ export class ElecSankey extends LitElement {
         // const friendlyName = routes.text;
         let width = 0;
         const rate = routes[key].rate || 0; // Handle undefined (NaN) rates.
+        const flowClass =
+          key === "phantom" && routes[key] === this._phantomGenerationInRoute
+            ? "unknown-source"
+            : "generation";
         // Most of the time, if the rate is zero, we don't want to draw it.
         // Exception is if we have a >0 phantom source.
         if (rate || phantomRate > 0) {
@@ -1009,7 +1178,7 @@ export class ElecSankey extends LitElement {
               startTerminatorY + TERMINATOR_BLOCK_LENGTH,
               xB,
               startTerminatorY + TERMINATOR_BLOCK_LENGTH,
-              "generation"
+              flowClass
             )
           );
           svgArray.push(
@@ -1035,7 +1204,19 @@ export class ElecSankey extends LitElement {
                 2}px; flex-basis: ${LABEL_WIDTH}px; margin: 0 0 0 ${-LABEL_WIDTH /
               2}px;"
             >
-              ${this._generateLabelDiv(id, icon, undefined, rate)}
+              ${this._generateLabelDiv(
+                id,
+                icon,
+                undefined,
+                rate,
+                undefined,
+                undefined,
+                undefined,
+                flowClass,
+                true,
+                routes[key].topValue,
+                routes[key].outline
+              )}
             </div>`
           );
         }
@@ -1184,7 +1365,9 @@ export class ElecSankey extends LitElement {
         undefined,
         undefined,
         "grid",
-        hasGridExport
+        hasGridExport,
+        gridRoute.topValue,
+        gridRoute.outline
       )}
     </div>`;
 
@@ -1393,6 +1576,31 @@ export class ElecSankey extends LitElement {
     );
   }
 
+  /**
+   * Total consumption label, placed just above the top (y1) of the
+   * converging trunk in the middle section and coloured like the trunk.
+   */
+  protected _renderConsumptionTotal(
+    y1: number,
+    svgScaleX: number,
+    color: string
+  ): TemplateResult | symbol {
+    if (!this.showConsumptionTotal) {
+      return nothing;
+    }
+    return html`<div
+      class="consumption-total"
+      style="top: ${y1 * svgScaleX}px; color: ${color};"
+    >
+      ${this._formatTotal(this._consumerTotalRate)}
+    </div>`;
+  }
+
+  /** Formats the total consumption; subclasses may localise it. */
+  protected _formatTotal(rate: number): TemplateResult | string {
+    return `${Math.round(rate)} ${this.unit}`;
+  }
+
   protected _renderBlendedFlowPreFanOut(
     y1: number,
     y4: number,
@@ -1442,6 +1650,8 @@ export class ElecSankey extends LitElement {
     number,
     number,
   ] {
+    // A consumer's own colour replaces the blended source colour.
+    color = consumer.color || color;
     const width = this._rateToWidth(consumer.rate);
     const xEnd = topRightX;
     const yEnd = topRightY + width / 2;
@@ -1476,7 +1686,19 @@ export class ElecSankey extends LitElement {
       top: ${yEnd * svgScaleX -
       (count * divHeight) / 2}px; margin: ${-divHeight / 2}px 0 0 0;"
     >
-      ${this._generateLabelDiv(id, undefined, consumer.text, consumer.rate)}
+      ${this._generateLabelDiv(
+        id,
+        consumer.icon,
+        consumer.text,
+        consumer.rate,
+        undefined,
+        consumer.color,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        consumer.outline
+      )}
     </div>`;
 
     const svgArrow = svg`
@@ -1708,7 +1930,8 @@ export class ElecSankey extends LitElement {
             yA + curvePadTemp,
             x1,
             yA + curvePadTemp + widthIn,
-            "battery"
+            "battery",
+            batt.color || null
           )
         );
         svgRetArray.push(
@@ -1775,13 +1998,18 @@ export class ElecSankey extends LitElement {
         >
             ${this._generateLabelDiv(
               batt.in.id,
-              batt.out.rate > 0 ? mdiBatteryCharging : mdiBattery,
+              this._batteryIcon(batt),
               "",
               batt.out.rate,
               batt.in.rate,
               batt.out.rate > 0 ? battOutBlendColor : undefined,
-              undefined,
-              "battery"
+              batt.color,
+              "battery",
+              true,
+              batt.soc !== undefined
+                ? { value: batt.soc, unit: "%", id: batt.socId }
+                : undefined,
+              batt.outline
             )}
           </div>
         </div>`
@@ -1950,6 +2178,26 @@ export class ElecSankey extends LitElement {
 
   protected render(): TemplateResult {
     this._recalculate();
+    let minHeightPx = 0;
+    if (this._rateToWidthMultplier < this._autoRateToWidthMultiplier) {
+      // Below maxRate the lines are drawn thinner than full scale, which
+      // would also make the diagram shorter. To keep the card a constant
+      // size, lay it out once at full scale (as auto-scaling would) just to
+      // measure its height, then reserve that height for the real diagram.
+      const actual = this._rateToWidthMultplier;
+      this._rateToWidthMultplier = this._autoRateToWidthMultiplier;
+      minHeightPx = this._renderLayout()[1];
+      this._rateToWidthMultplier = actual;
+    }
+    return this._renderLayout(minHeightPx)[0];
+  }
+
+  /**
+   * Lays out and renders the diagram at the current scale. Returns the
+   * template and the diagram's height in px. `minHeightPx` pads the diagram
+   * (blank space at the bottom) up to at least that height.
+   */
+  private _renderLayout(minHeightPx: number = 0): [TemplateResult, number] {
     const [
       x0,
       y0,
@@ -2021,7 +2269,7 @@ export class ElecSankey extends LitElement {
     const [gridInDiv, gridInFlowSvg] = this.renderGridInFlow(
       y2,
       y13,
-      x10,
+      y10,
       svgScaleX
     );
     const gridToConsumersFlowSvg = this.renderGridToConsumersFlow(
@@ -2108,9 +2356,20 @@ export class ElecSankey extends LitElement {
       y4,
       toConsumersBlendColor
     );
-    const ymax = Math.max(y4, y8, y22 + 30);
+    const ymax = Math.max(y4, y8, y22 + 30, minHeightPx / svgScaleX);
     const arrowBoxWidth = ARROW_HEAD_LENGTH + this._getExtrasLength();
-    return html`<div class="card-content">
+    // Consumer labels with an icon need extra room for it beside the text.
+    const hasConsumerIcons =
+      !!this.untrackedIcon ||
+      Object.values(this.consumerRoutes).some((route) => !!route.icon);
+    const hasOutlines =
+      !!this.gridInRoute?.outline ||
+      !!this.gridOutRoute?.outline ||
+      Object.values(this.generationInRoutes).some((r) => r.outline) ||
+      Object.values(this.consumerRoutes).some((r) => r.outline) ||
+      Object.values(this.batteryRoutes).some((b) => b.outline);
+    return [
+      html`<div class="card-content ${hasOutlines ? "has-outlines" : ""}">
       <div class="col1 container">
         <div class="col1top padding"></div>
         ${gridInDiv}
@@ -2146,7 +2405,14 @@ export class ElecSankey extends LitElement {
                   ${battToConsBlendFlowSvg} ${blendedFlowPreFanOut}
                 </svg>
               </div>
-              <div class="sankey-mid-labels">${batteriesFlowInOutDiv}</div>
+              <div class="sankey-mid-labels">
+                ${batteriesFlowInOutDiv}
+                ${this._renderConsumptionTotal(
+                  y1,
+                  svgScaleX,
+                  toConsumersBlendColor
+                )}
+              </div>
             </div>
           </div>
           <div class="sankey-right">
@@ -2172,11 +2438,13 @@ export class ElecSankey extends LitElement {
           </div>
         </div>
       </div>
-      <div class="col3 container">
+      <div class="col3 container ${hasConsumerIcons ? "has-icons" : ""}">
         <div class="col3top padding"></div>
         ${consOutFlowsDiv}
       </div>
-    </div>`;
+    </div>`,
+      ymax * svgScaleX,
+    ];
   }
 
   static get styles(): CSSResultGroup {
@@ -2227,6 +2495,31 @@ export class ElecSankey extends LitElement {
         height: 100%;
         position: absolute;
       }
+      /*
+       * Sits centred above the trunk; may overhang a narrow middle section.
+       * translate(-50%, -100%) puts its bottom-centre on (50%, top).
+       */
+      .consumption-total {
+        position: absolute;
+        left: 50%;
+        transform: translate(-50%, -100%);
+        padding-bottom: 2px;
+        white-space: nowrap;
+        font-size: 12px;
+        font-weight: 500;
+        pointer-events: none;
+        /*
+         * On narrow cards the middle section is thinner than the text, so
+         * it can overhang neighbouring flows. A thin card-coloured halo
+         * around the glyphs keeps it readable without blanking out a block
+         * of the diagram.
+         */
+        --halo: var(--ha-card-background, var(--card-background-color, #fff));
+        text-shadow:
+          0 0 2px var(--halo),
+          0 0 2px var(--halo),
+          0 0 1px var(--halo);
+      }
       .sankey-mid-svg {
         width: 100%;
         height: 100%;
@@ -2242,11 +2535,25 @@ export class ElecSankey extends LitElement {
         flex-grow: 0;
         min-width: ${this.extrasLength + ARROW_HEAD_LENGTH}px;
       }
+      /*
+       * Consumer label column. It grows with the card up to max-width, taking
+       * room from the stretchable fan-out (.sankey-right). The widths can be
+       * overridden with the CSS variables below (e.g. via card-mod).
+       */
       .col3 {
         flex: 1;
-        min-width: 80px;
-        max-width: 120px;
-        padding: 0px 16px 0px 0px;
+        min-width: var(--elec-sankey-consumer-label-min-width, 85px);
+        max-width: var(--elec-sankey-consumer-label-max-width, 140px);
+        padding: 0px 12px 0px 0px;
+      }
+      .col3.has-icons {
+        /* Add the width of a 24px icon plus its 4px margin. */
+        min-width: calc(
+          var(--elec-sankey-consumer-label-min-width, 85px) + 15px
+        );
+        max-width: calc(
+          var(--elec-sankey-consumer-label-max-width, 140px) + 15px
+        );
       }
       .col3top {
         height: 60px;
@@ -2258,12 +2565,61 @@ export class ElecSankey extends LitElement {
       }
       .elecroute-label-grid {
         display: flex;
+        /* The div is centred on the grid flow; centre its content too. */
+        align-items: center;
         text-align: center;
       }
       .elecroute-label-battery {
         display: flex;
+        /* The div is centred on the battery flow; centre its content too. */
+        align-items: center;
         min-width: 60px;
         padding-left: 6px;
+        text-align: center;
+      }
+      /*
+       * Size the inner label to its content so the icon and value centre on
+       * each other, while the block itself stays at the left, next to the
+       * battery flow.
+       */
+      .elecroute-label-battery > .label {
+        flex: 0 0 auto;
+      }
+      /*
+       * Optional rounded outline around a label. The label shrinks to its
+       * content (instead of filling its column) so the outline hugs it.
+       * Colour and radius can be themed with the CSS variables below.
+       */
+      .label.outlined {
+        flex: 0 1 auto;
+        min-width: 0;
+        box-sizing: border-box;
+        border: 1px solid
+          var(--elec-sankey-outline-color, var(--divider-color, #8888));
+        border-radius: var(--elec-sankey-outline-radius, 8px);
+        padding: 3px 6px;
+      }
+      /* Grid and generation labels are centred in their space. */
+      .elecroute-label-grid > .label.outlined,
+      .elecroute-label-horiz > .label.outlined {
+        margin: 0 auto;
+      }
+      .elecroute-label-horiz > .label.outlined {
+        align-self: center;
+      }
+      /* Battery values must not wrap (the label sits beside the flow). */
+      .elecroute-label-battery > .label.outlined {
+        flex: 0 0 auto;
+      }
+      /*
+       * Outlines add height, so give the top strip (generation labels, and
+       * the matching spacers above the grid and consumer columns) more room.
+       * All three must stay equal to keep labels aligned with the flows.
+       */
+      .card-content.has-outlines .col1top,
+      .card-content.has-outlines .col2top,
+      .card-content.has-outlines .col3top {
+        height: 68px;
       }
       .elecroute-label-horiz {
         display: flex;
@@ -2307,6 +2663,9 @@ export class ElecSankey extends LitElement {
         }
         polygon.grid {
           fill: var(--grid-in-color, #920e83);
+        }
+        path.unknown-source {
+          fill: var(--unknown-source-color, #8c8c8c);
         }
         polygon.tint {
           fill: #000000;

@@ -4,6 +4,8 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat";
 import { fireEvent } from "../../../common/dom/fire_event";
+import { computeStateName } from "../../../common/entity/compute_state_name";
+import "../../../components/ha-textfield";
 import type { HaEntityPicker } from "../../../components/entity/ha-entity-picker";
 import type { HomeAssistant } from "../../../types";
 import type { EntityConfig, LovelaceRowConfig } from "../entity-rows/types";
@@ -27,6 +29,31 @@ export class HuiEntitiesCardRowEditor extends LitElement {
   @property() public label?: string;
 
   @property() public subLabel?: string;
+
+  /** When set, each row shows a text field for a custom display name. */
+  @property({ type: Boolean }) public showNameField = false;
+
+  @property() public nameLabel?: string;
+
+  /** When set, each row shows an icon picker for a custom icon. */
+  @property({ type: Boolean }) public showIconField = false;
+
+  @property() public iconLabel?: string;
+
+  /** When set, each row shows a picker for a battery state of charge sensor. */
+  @property({ type: Boolean }) public showSocField = false;
+
+  @property() public socLabel?: string;
+
+  /** When set, each row shows a text field for a colour (CSS or template). */
+  @property({ type: Boolean }) public showColorField = false;
+
+  @property() public colorLabel?: string;
+
+  /** When set, each row shows a toggle for an outline around its label. */
+  @property({ type: Boolean }) public showOutlineField = false;
+
+  @property() public outlineLabel?: string;
 
   private _entityKeys = new WeakMap<LovelaceRowConfig, string>();
 
@@ -83,16 +110,48 @@ export class HuiEntitiesCardRowEditor extends LitElement {
                       </div>
                     `
             : html`
-                      <ha-entity-picker
-                        allow-custom-entity
-                        include-device-classes=${deviceClassesFilter}
-                        hideClearIcon
-                        label=${this.subLabel || nothing}
-                        .hass=${this.hass}
-                        .value=${(entityConf as EntityConfig).entity}
-                        .index=${index}
-                        @value-changed=${this._valueChanged}
-                      ></ha-entity-picker>
+                      <div class="entity-fields">
+                        <ha-entity-picker
+                          allow-custom-entity
+                          include-device-classes=${deviceClassesFilter}
+                          hideClearIcon
+                          label=${this.subLabel || nothing}
+                          .hass=${this.hass}
+                          .value=${(entityConf as EntityConfig).entity}
+                          .index=${index}
+                          @value-changed=${this._valueChanged}
+                        ></ha-entity-picker>
+                        ${this.showNameField
+                          ? this._renderNameField(
+                              entityConf as EntityConfig,
+                              index
+                            )
+                          : nothing}
+                        ${this.showIconField
+                          ? this._renderIconField(
+                              entityConf as EntityConfig,
+                              index
+                            )
+                          : nothing}
+                        ${this.showSocField
+                          ? this._renderSocField(
+                              entityConf as EntityConfig,
+                              index
+                            )
+                          : nothing}
+                        ${this.showColorField
+                          ? this._renderColorField(
+                              entityConf as EntityConfig,
+                              index
+                            )
+                          : nothing}
+                        ${this.showOutlineField
+                          ? this._renderOutlineField(
+                              entityConf as EntityConfig,
+                              index
+                            )
+                          : nothing}
+                      </div>
                     `}
                 <ha-icon-button
                   .label=${this.hass!.localize(
@@ -116,6 +175,168 @@ export class HuiEntitiesCardRowEditor extends LitElement {
         @value-changed=${this._addEntity}
       ></ha-entity-picker>
     `;
+  }
+
+  private _renderNameField(entityConf: EntityConfig, index: number) {
+    const stateObj = entityConf.entity
+      ? this.hass!.states[entityConf.entity]
+      : undefined;
+    return html`
+      <ha-textfield
+        class="name-field"
+        .label=${this.nameLabel || "Name"}
+        .placeholder=${stateObj ? computeStateName(stateObj) : ""}
+        .value=${entityConf.name || ""}
+        .index=${index}
+        @change=${this._nameChanged}
+      ></ha-textfield>
+    `;
+  }
+
+  private _renderIconField(entityConf: EntityConfig, index: number) {
+    // A nested <ha-form> is used (rather than <ha-icon-picker> directly)
+    // because ha-form is always defined in the card editor, and it lazily
+    // loads the icon selector itself.
+    return html`
+      <ha-form
+        class="icon-field"
+        .hass=${this.hass}
+        .data=${{ entity: entityConf.entity, icon: entityConf.icon }}
+        .schema=${[
+          {
+            name: "icon",
+            selector: { icon: {} },
+            context: { icon_entity: "entity" },
+          },
+        ]}
+        .computeLabel=${() => this.iconLabel || "Icon"}
+        .index=${index}
+        @value-changed=${this._iconChanged}
+      ></ha-form>
+    `;
+  }
+
+  private _renderSocField(entityConf: EntityConfig, index: number) {
+    return html`
+      <ha-form
+        class="soc-field"
+        .hass=${this.hass}
+        .data=${{ soc_entity: (entityConf as any).soc_entity }}
+        .schema=${[
+          {
+            name: "soc_entity",
+            selector: { entity: { domain: "sensor", device_class: "battery" } },
+          },
+        ]}
+        .computeLabel=${() => this.socLabel || "State of charge"}
+        .index=${index}
+        @value-changed=${this._socChanged}
+      ></ha-form>
+    `;
+  }
+
+  private _renderColorField(entityConf: EntityConfig, index: number) {
+    // A plain text field (not a colour picker) so templates can be entered.
+    // Saved on "change" for the same focus reason as the name field.
+    return html`
+      <ha-textfield
+        class="color-field"
+        .label=${this.colorLabel || "Color"}
+        .placeholder=${"#ff9800, red or {{ template }}"}
+        .value=${(entityConf as any).color || ""}
+        .index=${index}
+        @change=${this._colorChanged}
+      ></ha-textfield>
+    `;
+  }
+
+  private _renderOutlineField(entityConf: EntityConfig, index: number) {
+    return html`
+      <ha-form
+        class="outline-field"
+        .hass=${this.hass}
+        .data=${{ outline: !!(entityConf as any).outline }}
+        .schema=${[{ name: "outline", selector: { boolean: {} } }]}
+        .computeLabel=${() => this.outlineLabel || "Outline"}
+        .index=${index}
+        @value-changed=${this._outlineChanged}
+      ></ha-form>
+    `;
+  }
+
+  private _outlineChanged(ev: CustomEvent): void {
+    ev.stopPropagation();
+    const index = (ev.currentTarget as any).index;
+    const newConfigEntities = this.entities!.concat();
+    const newRow: any = { ...newConfigEntities[index] };
+    if (ev.detail.value?.outline) {
+      newRow.outline = true;
+    } else {
+      delete newRow.outline;
+    }
+    newConfigEntities[index] = newRow;
+    fireEvent(this, "entities-changed", { entities: newConfigEntities });
+  }
+
+  private _colorChanged(ev: Event): void {
+    const target = ev.target as HTMLInputElement & { index: number };
+    const color = target.value.trim();
+    const newConfigEntities = this.entities!.concat();
+    const newRow: any = { ...newConfigEntities[target.index] };
+    if (color) {
+      newRow.color = color;
+    } else {
+      delete newRow.color;
+    }
+    newConfigEntities[target.index] = newRow;
+    fireEvent(this, "entities-changed", { entities: newConfigEntities });
+  }
+
+  private _socChanged(ev: CustomEvent): void {
+    ev.stopPropagation();
+    const index = (ev.currentTarget as any).index;
+    const socEntity = ev.detail.value?.soc_entity;
+    const newConfigEntities = this.entities!.concat();
+    const newRow: any = { ...newConfigEntities[index] };
+    if (socEntity) {
+      newRow.soc_entity = socEntity;
+    } else {
+      delete newRow.soc_entity;
+    }
+    newConfigEntities[index] = newRow;
+    fireEvent(this, "entities-changed", { entities: newConfigEntities });
+  }
+
+  private _iconChanged(ev: CustomEvent): void {
+    ev.stopPropagation();
+    const index = (ev.currentTarget as any).index;
+    const icon = ev.detail.value?.icon;
+    const newConfigEntities = this.entities!.concat();
+    const newRow = { ...(newConfigEntities[index] as EntityConfig) };
+    if (icon) {
+      newRow.icon = icon;
+    } else {
+      delete newRow.icon;
+    }
+    newConfigEntities[index] = newRow;
+    fireEvent(this, "entities-changed", { entities: newConfigEntities });
+  }
+
+  private _nameChanged(ev: Event): void {
+    // Use "change" rather than "input": each update replaces the row object,
+    // which re-creates the row and would steal focus while typing.
+    const target = ev.target as HTMLInputElement & { index: number };
+    const index = target.index;
+    const name = target.value.trim();
+    const newConfigEntities = this.entities!.concat();
+    const newRow = { ...(newConfigEntities[index] as EntityConfig) };
+    if (name) {
+      newRow.name = name;
+    } else {
+      delete newRow.name;
+    }
+    newConfigEntities[index] = newRow;
+    fireEvent(this, "entities-changed", { entities: newConfigEntities });
   }
 
   private async _addEntity(ev: CustomEvent): Promise<void> {
@@ -210,6 +431,30 @@ export class HuiEntitiesCardRowEditor extends LitElement {
 
       .entity ha-entity-picker {
         flex-grow: 1;
+      }
+
+      .entity-fields {
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+      }
+
+      .entity-fields ha-entity-picker {
+        display: block;
+      }
+
+      .name-field,
+      .color-field {
+        display: block;
+        margin-top: 8px;
+        margin-bottom: 8px;
+      }
+
+      .icon-field,
+      .soc-field,
+      .outline-field {
+        display: block;
+        margin-bottom: 8px;
       }
 
       .special-row {

@@ -31,10 +31,45 @@ const POWER_LABELS = [
   "power_to_grid_entity",
   "generation_entity",
   "hide_small_consumers",
+  "hide_zero_consumers",
+  "show_total_consumption",
+  "max_power",
   "invert_battery_flows",
   "battery_charge_only_from_generation",
+  "battery_charge_from_generation_first",
   "independent_grid_in_out",
+  "grid_icon",
+  "generation_icon",
+  "untracked_icon",
+  "grid_secondary_entity",
+  "generation_secondary_entity",
+  "grid_color",
+  "generation_color",
+  "unknown_source_icon",
+  "unknown_source_color",
+  "grid_outline",
+  "generation_outline",
 ];
+
+// Optional string fields (icons, secondary entities); cleared when emptied.
+const OPTIONAL_STRING_FIELDS = [
+  "grid_icon",
+  "generation_icon",
+  "untracked_icon",
+  "grid_secondary_entity",
+  "generation_secondary_entity",
+  "grid_color",
+  "generation_color",
+  "unknown_source_icon",
+  "unknown_source_color",
+] as const;
+
+// Optional on/off settings; removed from the config when switched off.
+const OPTIONAL_FLAG_FIELDS = [
+  "grid_outline",
+  "generation_outline",
+  "show_total_consumption",
+] as const;
 
 @customElement(POWER_CARD_EDITOR_NAME)
 export class PowerFlowCardEditor
@@ -64,6 +99,13 @@ export class PowerFlowCardEditor
           },
         },
       },
+      {
+        name: "grid_icon",
+        selector: { icon: { placeholder: "mdi:transmission-tower" } },
+      },
+      { name: "grid_secondary_entity", selector: { entity: {} } },
+      { name: "grid_color", selector: { text: {} } },
+      { name: "grid_outline", selector: { boolean: {} } },
       ...(showSeparateToGridOption
         ? [
             {
@@ -87,6 +129,13 @@ export class PowerFlowCardEditor
         },
       },
       {
+        name: "generation_icon",
+        selector: { icon: { placeholder: "mdi:solar-power" } },
+      },
+      { name: "generation_secondary_entity", selector: { entity: {} } },
+      { name: "generation_color", selector: { text: {} } },
+      { name: "generation_outline", selector: { boolean: {} } },
+      {
         name: "appearance",
         flatten: true,
         type: "expandable",
@@ -103,7 +152,35 @@ export class PowerFlowCardEditor
             },
           },
           {
+            name: "untracked_icon",
+            selector: { icon: {} },
+          },
+          {
+            name: "unknown_source_icon",
+            selector: { icon: { placeholder: "mdi:help-rhombus" } },
+          },
+          { name: "unknown_source_color", selector: { text: {} } },
+          {
+            name: "max_power",
+            selector: {
+              number: {
+                min: 0,
+                step: 100,
+                mode: "box",
+                unit_of_measurement: "W",
+              },
+            },
+          },
+          {
             name: "hide_small_consumers",
+            selector: { boolean: {} },
+          },
+          {
+            name: "hide_zero_consumers",
+            selector: { boolean: {} },
+          },
+          {
+            name: "show_total_consumption",
             selector: { boolean: {} },
           },
           {
@@ -112,6 +189,10 @@ export class PowerFlowCardEditor
           },
           {
             name: "battery_charge_only_from_generation",
+            selector: { boolean: {} },
+          },
+          {
+            name: "battery_charge_from_generation_first",
             selector: { boolean: {} },
           },
         ],
@@ -134,7 +215,7 @@ export class PowerFlowCardEditor
   public setConfig(config: PowerFlowCardConfig): void {
     this._config = verifyAndMigrateConfig(config);
     this._configBatteryEntities = processEditorEntities(
-      this._config.battery_entities
+      this._config.battery_entities || []
     );
     this._configConsumerEntities = processEditorEntities(
       this._config.consumer_entities
@@ -193,6 +274,14 @@ export class PowerFlowCardEditor
         subLabel=${batteryHint}
         .entities=${this._configBatteryEntities}
         includeDeviceClasses=${["power"]}
+        showIconField
+        iconLabel=${customLocalize(`editor.card.power_sankey.entity_icon`)}
+        showSocField
+        socLabel=${customLocalize(`editor.card.power_sankey.battery_soc`)}
+        showColorField
+        colorLabel=${customLocalize(`editor.card.power_sankey.entity_color`)}
+        showOutlineField
+        outlineLabel=${customLocalize(`editor.card.power_sankey.entity_outline`)}
         @entities-changed=${this._valueChanged}
       ></elec-sankey-hui-entities-card-row-editor>
       <elec-sankey-hui-entities-card-row-editor
@@ -201,6 +290,14 @@ export class PowerFlowCardEditor
         label="Consumer Entities (Required)"
         .entities=${this._configConsumerEntities}
         includeDeviceClasses=${["power"]}
+        showNameField
+        nameLabel=${customLocalize(`editor.card.power_sankey.consumer_name`)}
+        showIconField
+        iconLabel=${customLocalize(`editor.card.power_sankey.entity_icon`)}
+        showColorField
+        colorLabel=${customLocalize(`editor.card.power_sankey.entity_color`)}
+        showOutlineField
+        outlineLabel=${customLocalize(`editor.card.power_sankey.entity_outline`)}
         @entities-changed=${this._valueChanged}
         @edit-detail-element=${this._editDetailElement}
       ></elec-sankey-hui-entities-card-row-editor>
@@ -213,6 +310,20 @@ export class PowerFlowCardEditor
         to help us improve it!
       </ha-alert>
     `;
+  }
+
+  /** Returns the optional flag key that differs between value and config. */
+  private _changedFlagField(value: any): string | undefined {
+    return OPTIONAL_FLAG_FIELDS.find(
+      (key) => !!value[key] !== !!this._config![key]
+    );
+  }
+
+  /** Returns the optional string key that differs between value and config. */
+  private _changedOptionalField(value: any): string | undefined {
+    return OPTIONAL_STRING_FIELDS.find(
+      (key) => (value[key] || "") !== (this._config![key] || "")
+    );
   }
 
   private _valueChanged(ev: CustomEvent): void {
@@ -239,7 +350,13 @@ export class PowerFlowCardEditor
       //   configValue = "theme";
       //   value = value.theme;
       // }
-      else if (
+      else if (this._changedFlagField(value)) {
+        configValue = this._changedFlagField(value);
+        value = value[configValue!] ? true : "";
+      } else if (this._changedOptionalField(value)) {
+        configValue = this._changedOptionalField(value);
+        value = value[configValue!] || "";
+      } else if (
         value.power_from_grid_entity !== this._config.power_from_grid_entity
       ) {
         configValue = "power_from_grid_entity";
@@ -263,6 +380,14 @@ export class PowerFlowCardEditor
       ) {
         configValue = "hide_small_consumers";
         value = value.hide_small_consumers;
+      } else if (value.max_power != this._config.max_power) {
+        configValue = "max_power";
+        value = value.max_power ?? "";
+      } else if (
+        value.hide_zero_consumers != this._config.hide_zero_consumers
+      ) {
+        configValue = "hide_zero_consumers";
+        value = value.hide_zero_consumers;
       } else if (
         value.invert_battery_flows != this._config.invert_battery_flows
       ) {
@@ -274,6 +399,12 @@ export class PowerFlowCardEditor
       ) {
         configValue = "battery_charge_only_from_generation";
         value = value.battery_charge_only_from_generation;
+      } else if (
+        value.battery_charge_from_generation_first !=
+        this._config.battery_charge_from_generation_first
+      ) {
+        configValue = "battery_charge_from_generation_first";
+        value = value.battery_charge_from_generation_first;
       } else if (
         value.independent_grid_in_out != this._config.independent_grid_in_out
       ) {
@@ -317,7 +448,7 @@ export class PowerFlowCardEditor
           battery_entities: newConfigEntities,
         };
         this._configBatteryEntities = processEditorEntities(
-          this._config!.battery_entities
+          this._config!.battery_entities || []
         );
       }
     } else if (configValue) {

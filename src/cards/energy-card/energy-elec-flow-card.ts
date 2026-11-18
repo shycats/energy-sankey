@@ -43,6 +43,7 @@ const DEFAULT_CONFIG: EnergyElecFlowCardConfig = {
   hide_small_consumers: false,
   max_consumer_branches: 0,
   battery_charge_only_from_generation: false,
+  battery_charge_from_generation_first: false,
 };
 
 export function verifyAndMigrateConfig(config: EnergyElecFlowCardConfig) {
@@ -132,6 +133,8 @@ export class EnergyElecFlowCard
       : 0;
     const batteryChargeOnlyFromGeneration =
       this._config.battery_charge_only_from_generation || false;
+    const batteryChargeFromGenerationFirst =
+      this._config.battery_charge_from_generation_first || false;
     return html`
       <ha-card>
         ${this._config.title
@@ -152,6 +155,7 @@ export class EnergyElecFlowCard
             .maxConsumerBranches=${maxConsumerBranches}
             .hideConsumersBelow=${hideConsumersBelow}
             .batteryChargeOnlyFromGeneration=${batteryChargeOnlyFromGeneration}
+            .batteryChargeFromGenerationFirst=${batteryChargeFromGenerationFirst}
           ></ha-elec-sankey>
         </div>
       </ha-card>
@@ -288,6 +292,10 @@ export class EnergyElecFlowCard
         flex-direction: column;
         box-sizing: border-box;
         padding-bottom: 16px;
+      }
+      /* Without a title the diagram would touch the top edge of the card. */
+      .content:not(.has-header) {
+        padding-top: 16px;
       }
       ha-elec-sankey {
         --generation-color: var(--energy-solar-color);

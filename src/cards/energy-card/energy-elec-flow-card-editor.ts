@@ -16,6 +16,7 @@ import { verifyAndMigrateConfig } from "./energy-elec-flow-card";
 const ENERGY_LABELS = [
   "hide_small_consumers",
   "battery_charge_only_from_generation",
+  "battery_charge_from_generation_first",
 ];
 const schema = [
   { name: "title", selector: { text: {} } },
@@ -42,6 +43,10 @@ const schema = [
       },
       {
         name: "battery_charge_only_from_generation",
+        selector: { boolean: {} },
+      },
+      {
+        name: "battery_charge_from_generation_first",
         selector: { boolean: {} },
       },
     ],

@@ -2,7 +2,7 @@
   "card": {
     "generic": {
       "other": "Otros",
-      "untracked": "Sin seguimiento"
+      "untracked": "Resto"
     },
     "power_sankey": {
       "live_power_flow": "Flujo de energía en tiempo real"
