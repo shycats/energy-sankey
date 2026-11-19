@@ -68,6 +68,16 @@ const ICON_SIZE_PX = 24;
 const GEN_ORIGIN_X = 150;
 
 const SVG_LHS_VISIBLE_WIDTH = 110;
+/**
+ * Left-hand canvas width (x1 in _calc_xy) for the widest layout a full-width
+ * trunk can produce: all generation in a single flow (e.g. all exported),
+ * with its curve padding either side. With maxRate set, the canvas-to-screen
+ * scale is fixed so that this layout just fills SVG_LHS_VISIBLE_WIDTH.
+ */
+const LHS_REFERENCE_CANVAS_WIDTH =
+  ARROW_HEAD_LENGTH +
+  GRID_BLEND_LENGTH +
+  TARGET_SCALED_TRUNK_WIDTH * (1 + 2 * PAD_MULTIPLIER);
 
 export const PAD_ANTIALIAS = 0.5;
 
@@ -550,8 +560,13 @@ export class ElecSankey extends LitElement {
   public netBidirectionalValues: boolean = false;
 
   /**
-   * Rate drawn at full trunk width. Below it the scale is fixed, so smaller
-   * rates draw thinner lines; above it (or when unset) the diagram scales
+   * Rate drawn at full trunk width. When set, the scale is fixed: a given
+   * rate is always drawn the same number of pixels thick, however the power
+   * is split between sources and destinations. Trunks above maxRate draw
+   * thicker, making the card taller. The left-hand part of the diagram
+   * narrows when its flows need less room, and is only squeezed (shrinking
+   * everything) if they need more room than a full-width generation flow
+   * would, e.g. generation well above maxRate. When unset, the diagram scales
    * automatically so the widest trunk is always full width.
    */
   @property({ attribute: false })
@@ -592,6 +607,13 @@ export class ElecSankey extends LitElement {
   };
 
   private _gridExport: number = 0;
+
+  /**
+   * Blank canvas to the left of the diagram's left-hand part (canvas units),
+   * when maxRate fixes the scale and the flows need less than the full
+   * width. The grid flows are extended through it. Set by _renderLayout().
+   */
+  private _lhsPad: number = 0;
 
   /** Unknown generation re-attributed to grid import (unknownSourceToGrid). */
   private _gridImportExtra: number = 0;
@@ -1011,12 +1033,14 @@ export class ElecSankey extends LitElement {
       1.0,
     );
     this._autoRateToWidthMultiplier = TARGET_SCALED_TRUNK_WIDTH / widest_trunk;
+    // With maxRate the scale is fixed, even for trunks above maxRate: those
+    // just draw thicker (the card grows taller). Only running out of width
+    // shrinks the diagram, and that is handled by squeezing the left-hand
+    // canvas (see svgScaleX in _renderLayout).
     this._rateToWidthMultplier =
-      TARGET_SCALED_TRUNK_WIDTH /
-      Math.max(
-        widest_trunk,
-        this.maxRate && this.maxRate > 0 ? this.maxRate : 0,
-      );
+      this.maxRate && this.maxRate > 0
+        ? TARGET_SCALED_TRUNK_WIDTH / this.maxRate
+        : this._autoRateToWidthMultiplier;
   }
 
   private _rateToWidth(rate: number): number {
@@ -1290,7 +1314,7 @@ export class ElecSankey extends LitElement {
           divArray.push(
             html`<div
               class="label elecroute-label-horiz"
-              style="left: ${midX * svgScaleX -
+              style="left: ${(midX + this._lhsPad) * svgScaleX -
               (i * LABEL_WIDTH) /
                 2}px; flex-basis: ${LABEL_WIDTH}px; margin: 0 0 0 ${-LABEL_WIDTH /
               2}px;"
@@ -1385,13 +1409,29 @@ export class ElecSankey extends LitElement {
     if (this._gridOutFlowWidth() === 0) {
       return nothing;
     }
+    // The arrow sits at the left edge, past any blank padding, with the flow
+    // extended through the padding to reach it.
+    const xArrow = x10 - this._lhsPad;
+    const fill = color ? `fill:${color};fill-opacity:1` : ``;
     return svg`
+    ${
+      this._lhsPad > 0
+        ? svg`<rect
+          class="grid-out-arrow"
+          x="${xArrow}"
+          y="${y10}"
+          width="${this._lhsPad + PAD_ANTIALIAS}"
+          height="${y2 - y10}"
+          style="${fill}"
+        />`
+        : nothing
+    }
     <polygon
       class="grid-out-arrow"
-      points="${x10},${y10}
-      ${x10},${y2}
-      ${x10 - arrow_head_length},${(y10 + y2) / 2}"
-      style="${color ? `fill:${color};fill-opacity:1` : ``}"
+      points="${xArrow},${y10}
+      ${xArrow},${y2}
+      ${xArrow - arrow_head_length},${(y10 + y2) / 2}"
+      style="${fill}"
     />
   `;
   }
@@ -1466,14 +1506,14 @@ export class ElecSankey extends LitElement {
     <rect
       class="grid"
       id="grid-in-rect"
-      x="${0}"
+      x="${-this._lhsPad}"
       y="${y2}"
       height="${in_width}"
-      width="${arrow_head_length}"
+      width="${arrow_head_length + this._lhsPad}"
     />
-    <polygon points="${0},${y2}
-    ${0},${y2 + in_width}
-    ${arrow_head_length},${y2 + in_width / 2}"
+    <polygon points="${-this._lhsPad},${y2}
+    ${-this._lhsPad},${y2 + in_width}
+    ${arrow_head_length - this._lhsPad},${y2 + in_width / 2}"
     class="tint"/>
   `;
     return [divRet, svgRet];
@@ -2210,13 +2250,20 @@ export class ElecSankey extends LitElement {
         widthBatteriesToGrid + widthBatteriesToConsumers,
       );
     const width = mostRight - mostLeft;
+    // Room for the flows' curves, which sets the curve lengths and the
+    // offsets that follow from them (e.g. where the battery and consumer
+    // trunks sit). It grows with the widest flow so curves stay smooth. With
+    // maxRate, flows below it are drawn thinner but should not move anything,
+    // so keep the room a full-width flow would need.
+    const minPadWidth =
+      this.maxRate && this.maxRate > 0 ? TARGET_SCALED_TRUNK_WIDTH : 30;
     const padX =
       Math.max(
         widthGenToGrid,
         widthGenToConsumers,
         widthGridToBatteries,
         widthBatteriesToConsumers,
-        30,
+        minPadWidth,
       ) * PAD_MULTIPLIER;
     const midX = ARROW_HEAD_LENGTH + GRID_BLEND_LENGTH + width / 2 + padX;
 
@@ -2304,9 +2351,21 @@ export class ElecSankey extends LitElement {
       toBatteriesBlendColor, // TODO refactor this
     ] = this._calc_xy();
 
-    const svgCanvasWidth = x1;
+    // The left-hand canvas is scaled to fit SVG_LHS_VISIBLE_WIDTH. Without
+    // maxRate it is always stretched or squeezed to exactly that width. Its
+    // width depends on how the power is split, though (generation fanning out
+    // needs room; grid power flowing straight to consumers doesn't), so with
+    // maxRate the scale is fixed instead: the canvas is the reference width
+    // (unless the flows need more), and the diagram sits at its right, with
+    // the grid flows extended through the blank part on the left. The
+    // on-screen width stays constant, so the columns don't move around.
+    const svgCanvasWidth =
+      this.maxRate && this.maxRate > 0
+        ? Math.max(x1, LHS_REFERENCE_CANVAS_WIDTH)
+        : x1;
+    this._lhsPad = svgCanvasWidth - x1;
+    const svgScaleX = SVG_LHS_VISIBLE_WIDTH / svgCanvasWidth;
     const svgVisibleWidth = SVG_LHS_VISIBLE_WIDTH;
-    const svgScaleX = svgVisibleWidth / svgCanvasWidth;
     const x10 = ARROW_HEAD_LENGTH / svgScaleX;
     const x11 = x10 + GRID_BLEND_LENGTH;
 
@@ -2472,7 +2531,7 @@ export class ElecSankey extends LitElement {
           <div class="col2bottom container">
             <div class="sankey-left">
               <svg
-                viewBox="0 0 ${svgCanvasWidth} ${ymax}"
+                viewBox="${-this._lhsPad} 0 ${svgCanvasWidth} ${ymax}"
                 width="100%"
                 style="min-width: ${svgVisibleWidth}px"
                 height=${ymax * svgScaleX}
@@ -2547,10 +2606,14 @@ export class ElecSankey extends LitElement {
         direction: ltr;
         display: flex;
       }
+      /*
+       * Grid label column. Fixed width, so it neither wastes spare card width
+       * nor moves the diagram when the grid values change; spare width goes
+       * to the stretchable fan-out. Override with the CSS variable.
+       */
       .col1 {
-        flex: 1;
-        min-width: 60px;
-        max-width: 120px;
+        flex: 0 0 auto;
+        width: var(--elec-sankey-grid-label-width, 70px);
       }
       .col1top {
         height: 60px;
@@ -2629,24 +2692,24 @@ export class ElecSankey extends LitElement {
         min-width: ${this.extrasLength + ARROW_HEAD_LENGTH}px;
       }
       /*
-       * Consumer label column. It grows with the card up to max-width, taking
-       * room from the stretchable fan-out (.sankey-right). The widths can be
-       * overridden with the CSS variables below (e.g. via card-mod).
+       * Consumer label column. Fixed width, so it neither wastes spare card
+       * width nor moves the diagram when consumers appear or disappear; spare
+       * width goes to the stretchable fan-out. Longer names are truncated.
+       * Override with --elec-sankey-consumer-label-width (e.g. via card-mod);
+       * --elec-sankey-consumer-label-min-width is still honoured as before.
        */
       .col3 {
-        flex: 1;
-        min-width: var(--elec-sankey-consumer-label-min-width, 85px);
-        max-width: var(--elec-sankey-consumer-label-max-width, 140px);
+        --elec-sankey-consumer-label-width-base: var(
+          --elec-sankey-consumer-label-width,
+          var(--elec-sankey-consumer-label-min-width, 85px)
+        );
+        flex: 0 0 auto;
+        width: var(--elec-sankey-consumer-label-width-base);
         padding: 0px 12px 0px 0px;
       }
       .col3.has-icons {
-        /* Add the width of a 24px icon plus its 4px margin. */
-        min-width: calc(
-          var(--elec-sankey-consumer-label-min-width, 85px) + 15px
-        );
-        max-width: calc(
-          var(--elec-sankey-consumer-label-max-width, 140px) + 15px
-        );
+        /* Add room for the icon beside the name. */
+        width: calc(var(--elec-sankey-consumer-label-width-base) + 15px);
       }
       .col3top {
         height: 60px;

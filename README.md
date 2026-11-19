@@ -15,7 +15,7 @@ It has been modified with the following changes:
 - Battery level: soc_entity on each battery shows a percentage, and the icon changes with the SoC.
 - hide_zero_consumers: hides consumers at 0 W, negative or unavailable.
 - show_total_consumption: shows total consumption above the central trunk.
-- max_power: fixes the scale, so lower power draws thinner lines. The card keeps a constant height.
+- max_power: fixes the scale, so the same power is always drawn equally thick, whether it comes from the grid, generation or batteries (the left part of the diagram narrows instead of stretching). Below max_power the card keeps a constant height; flows above it draw thicker and the card grows taller, except generation well above max_power, which shrinks the diagram to fit its width. Set it to around your peak generation or consumption.
 - Net values for grid and batteries: the power card now shows a single net value with a direction arrow, instead of separate in and out values.
 
 ## Both cards:
@@ -25,7 +25,7 @@ It has been modified with the following changes:
 
 ## Renderer and layout
 
-- elec-sankey.ts: new props for all of the above. The "unknown source" flow is now gray, themeable via --unknown-source-color. The consumer label column is wider and can be overridden with CSS variables; labels with icons get extra room, and outlines get a taller top strip. Battery and grid labels are now centered.
+- elec-sankey.ts: new props for all of the above. The "unknown source" flow is now gray, themeable via --unknown-source-color. The grid and consumer label columns have fixed widths, so spare card width goes to the diagram and nothing moves as values change; override them with --elec-sankey-grid-label-width (default 70px) and --elec-sankey-consumer-label-width (default 85px, or --elec-sankey-consumer-label-min-width if set); consumer labels with icons get extra room, and outlines get a taller top strip. Battery and grid labels are now centered.
 - Bug fix: renderGridInFlow was passed x10 where it should have been y10.
 - ha-elec-sankey.ts: label rendering is refactored into \_generateLabelBody. Consumers show their icon beside the name, values that round to zero use the neutral text color, value colors follow the configured flow colors, and the total is formatted for the locale.
 
