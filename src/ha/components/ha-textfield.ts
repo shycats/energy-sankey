@@ -35,7 +35,7 @@ export class HaTextField extends TextFieldBase {
       this.setCustomValidity(
         this.invalid
           ? this.errorMessage || this.validationMessage || "Invalid"
-          : ""
+          : "",
       );
       if (
         this.invalid ||
@@ -73,7 +73,7 @@ export class HaTextField extends TextFieldBase {
 
   protected override renderIcon(
     _icon: string,
-    isTrailingIcon = false
+    isTrailingIcon = false,
   ): TemplateResult {
     const type = isTrailingIcon ? "trailing" : "leading";
 

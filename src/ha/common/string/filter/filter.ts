@@ -99,7 +99,7 @@ export function isPatternInWord(
   wordLow: string,
   wordPos: number,
   wordLen: number,
-  fillMinWordPosArr = false
+  fillMinWordPosArr = false,
 ): boolean {
   while (patternPos < patternLen && wordPos < wordLen) {
     if (patternLow[patternPos] === wordLow[wordPos]) {
@@ -139,7 +139,7 @@ export function fuzzyScore(
   word: string,
   wordLow: string,
   wordStart: number,
-  firstMatchCanBeWeak: boolean
+  firstMatchCanBeWeak: boolean,
 ): FuzzyScore | undefined {
   const patternLen = pattern.length > _maxLen ? _maxLen : pattern.length;
   const wordLen = word.length > _maxLen ? _maxLen : word.length;
@@ -163,7 +163,7 @@ export function fuzzyScore(
       wordLow,
       wordStart,
       wordLen,
-      true
+      true,
     )
   ) {
     return undefined;
@@ -177,7 +177,7 @@ export function fuzzyScore(
     patternStart,
     wordStart,
     patternLow,
-    wordLow
+    wordLow,
   );
 
   let row: number;
@@ -219,7 +219,7 @@ export function fuzzyScore(
           wordLen,
           wordStart,
           _diag[row - 1][column - 1] === 0,
-          hasStrongFirstMatch
+          hasStrongFirstMatch,
         );
       }
 
@@ -346,7 +346,7 @@ function _doScore(
   wordLen: number,
   wordStart: number,
   newMatchStart: boolean,
-  outFirstMatchStrong: boolean[]
+  outFirstMatchStrong: boolean[],
 ): number {
   if (patternLow[patternPos] !== wordLow[wordPos]) {
     return Number.MIN_SAFE_INTEGER;
@@ -424,7 +424,7 @@ function printTable(
   pattern: string,
   patternLen: number,
   word: string,
-  wordLen: number
+  wordLen: number,
 ): string {
   function pad(s: string, n: number, _pad = " ") {
     while (s.length < n) {
@@ -456,7 +456,7 @@ function printTables(
   pattern: string,
   patternStart: number,
   word: string,
-  wordStart: number
+  wordStart: number,
 ): void {
   pattern = pattern.substr(patternStart);
   word = word.substr(wordStart);
@@ -485,7 +485,7 @@ function _fillInMaxWordMatchPos(
   patternStart: number,
   wordStart: number,
   patternLow: string,
-  wordLow: string
+  wordLow: string,
 ) {
   let patternPos = patternLen - 1;
   let wordPos = wordLen - 1;
@@ -506,7 +506,7 @@ export interface FuzzyScorer {
     word: string,
     lowWord: string,
     wordPos: number,
-    firstMatchCanBeWeak: boolean
+    firstMatchCanBeWeak: boolean,
   ): FuzzyScore | undefined;
 }
 

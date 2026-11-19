@@ -1,7 +1,4 @@
-import {
-  LovelaceCardConfig,
-  LovelaceConfig,
-} from "../../data/lovelace";
+import { LovelaceCardConfig, LovelaceConfig } from "../../data/lovelace";
 import { FrontendLocaleData } from "../../data/translation";
 import { Constructor, HomeAssistant } from "../../types";
 

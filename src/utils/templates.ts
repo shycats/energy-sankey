@@ -57,14 +57,14 @@ export class TemplateSubscriber {
             this._onChange();
           }
         },
-        { type: "render_template", template }
+        { type: "render_template", template },
       )
       .catch((err) => {
         // Invalid template: keep the entry (so we don't retry on every
         // update) but leave the result empty, so the default colour is used.
         console.warn(
           `[energy-sankey] Template failed: ${template}`,
-          err?.message ?? err
+          err?.message ?? err,
         );
         return undefined;
       });

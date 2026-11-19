@@ -6,7 +6,7 @@ import { processConfigEntities } from "./process-config-entities";
 
 export function hasConfigChanged(
   element: any,
-  changedProps: PropertyValues
+  changedProps: PropertyValues,
 ): boolean {
   if (changedProps.has("_config")) {
     return true;
@@ -41,7 +41,7 @@ export function hasConfigChanged(
 function compareEntityState(
   oldHass: HomeAssistant,
   newHass: HomeAssistant,
-  entityId: string
+  entityId: string,
 ) {
   const oldState = oldHass.states[entityId] as HassEntity | undefined;
   const newState = newHass.states[entityId] as HassEntity | undefined;
@@ -52,7 +52,7 @@ function compareEntityState(
 function compareEntityDisplayEntry(
   oldHass: HomeAssistant,
   newHass: HomeAssistant,
-  entityId: string
+  entityId: string,
 ) {
   const oldEntry = oldHass.entities[entityId] as
     | EntityRegistryDisplayEntry
@@ -67,7 +67,7 @@ function compareEntityDisplayEntry(
 // Check if config or Entity changed
 export function hasConfigOrEntityChanged(
   element: any,
-  changedProps: PropertyValues
+  changedProps: PropertyValues,
 ): boolean {
   if (hasConfigChanged(element, changedProps)) {
     return true;
@@ -89,7 +89,7 @@ export function hasConfigOrEntityChanged(
 // Check if config or Entities changed
 export function hasConfigOrEntitiesChanged(
   element: any,
-  changedProps: PropertyValues
+  changedProps: PropertyValues,
 ): boolean {
   if (hasConfigChanged(element, changedProps)) {
     return true;

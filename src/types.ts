@@ -56,6 +56,8 @@ export interface PowerFlowCardConfig extends ElecFlowCardConfig {
   unknown_source_icon?: string;
   /** CSS colour or Jinja template for the "unknown source" flow and value. */
   unknown_source_color?: string;
+  /** Count any unknown generation as grid import instead of showing it. */
+  unknown_source_to_grid?: boolean;
   /** Draw a rounded outline around the grid label. */
   grid_outline?: boolean;
   /** Draw a rounded outline around the generation label. */

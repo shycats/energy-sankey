@@ -76,40 +76,40 @@ export class HuiEntitiesCardRowEditor extends LitElement {
     return html`
       <h3>
         ${this.label ||
-      `${this.hass!.localize(
-        "ui.panel.lovelace.editor.card.generic.entities"
-      )} (${this.hass!.localize(
-        "ui.panel.lovelace.editor.card.config.required"
-      )})`}
+        `${this.hass!.localize(
+          "ui.panel.lovelace.editor.card.generic.entities",
+        )} (${this.hass!.localize(
+          "ui.panel.lovelace.editor.card.config.required",
+        )})`}
       </h3>
       <ha-sortable handle-selector=".handle" @item-moved=${this._rowMoved}>
         <div class="entities">
           ${repeat(
-        this.entities,
-        (entityConf) => this._getKey(entityConf),
-        (entityConf, index) => html`
+            this.entities,
+            (entityConf) => this._getKey(entityConf),
+            (entityConf, index) => html`
               <div class="entity">
                 <div class="handle">
                   <ha-svg-icon .path=${mdiDrag}></ha-svg-icon>
                 </div>
                 ${entityConf.type
-            ? html`
+                  ? html`
                       <div class="special-row">
                         <div>
                           <span>
                             ${this.hass!.localize(
-              `ui.panel.lovelace.editor.card.entities.entity_row.${entityConf.type}`
-            )}
+                              `ui.panel.lovelace.editor.card.entities.entity_row.${entityConf.type}`,
+                            )}
                           </span>
                           <span class="secondary"
                             >${this.hass!.localize(
-              "ui.panel.lovelace.editor.card.entities.edit_special_row"
-            )}</span
+                              "ui.panel.lovelace.editor.card.entities.edit_special_row",
+                            )}</span
                           >
                         </div>
                       </div>
                     `
-            : html`
+                  : html`
                       <div class="entity-fields">
                         <ha-entity-picker
                           allow-custom-entity
@@ -124,47 +124,47 @@ export class HuiEntitiesCardRowEditor extends LitElement {
                         ${this.showNameField
                           ? this._renderNameField(
                               entityConf as EntityConfig,
-                              index
+                              index,
                             )
                           : nothing}
                         ${this.showIconField
                           ? this._renderIconField(
                               entityConf as EntityConfig,
-                              index
+                              index,
                             )
                           : nothing}
                         ${this.showSocField
                           ? this._renderSocField(
                               entityConf as EntityConfig,
-                              index
+                              index,
                             )
                           : nothing}
                         ${this.showColorField
                           ? this._renderColorField(
                               entityConf as EntityConfig,
-                              index
+                              index,
                             )
                           : nothing}
                         ${this.showOutlineField
                           ? this._renderOutlineField(
                               entityConf as EntityConfig,
-                              index
+                              index,
                             )
                           : nothing}
                       </div>
                     `}
                 <ha-icon-button
                   .label=${this.hass!.localize(
-              "ui.components.entity.entity-picker.clear"
-            )}
+                    "ui.components.entity.entity-picker.clear",
+                  )}
                   .path=${mdiClose}
                   class="remove-icon"
                   .index=${index}
                   @click=${this._removeRow}
                 ></ha-icon-button>
               </div>
-            `
-      )}
+            `,
+          )}
         </div>
       </ha-sortable>
       <ha-entity-picker

@@ -4,7 +4,6 @@ Energy Sankey is a collection of dashboard cards for homeassistant, dynamically 
 
 This project is a Fork from the original https://github.com/davet2001/energy-sankey, it's not available in HACS, if you want to use it you have to manually install it by copying energy-sankey.js from the releases section into your Home Assistant /config/www folder and add it under the Resources section (three dots) of the Dashboards configuration in Home Assistant.
 
-
 It has been modified with the following changes:
 
 ## Power card:
@@ -28,7 +27,7 @@ It has been modified with the following changes:
 
 - elec-sankey.ts: new props for all of the above. The "unknown source" flow is now gray, themeable via --unknown-source-color. The consumer label column is wider and can be overridden with CSS variables; labels with icons get extra room, and outlines get a taller top strip. Battery and grid labels are now centered.
 - Bug fix: renderGridInFlow was passed x10 where it should have been y10.
-- ha-elec-sankey.ts: label rendering is refactored into _generateLabelBody. Consumers show their icon beside the name, values that round to zero use the neutral text color, value colors follow the configured flow colors, and the total is formatted for the locale.
+- ha-elec-sankey.ts: label rendering is refactored into \_generateLabelBody. Consumers show their icon beside the name, values that round to zero use the neutral text color, value colors follow the configured flow colors, and the total is formatted for the locale.
 
 ## Editors
 

@@ -192,7 +192,7 @@ export interface ExtEntityRegistryEntry extends EntityRegistryEntry {
 
 export const getExtendedEntityRegistryEntry = (
   hass: HomeAssistant,
-  entityId: string
+  entityId: string,
 ): Promise<ExtEntityRegistryEntry> =>
   hass.callWS({
     type: "config/entity_registry/get",

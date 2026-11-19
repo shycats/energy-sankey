@@ -1,12 +1,12 @@
 import memoizeOne from "memoize-one";
 
 const collator = memoizeOne(
-  (language: string | undefined) => new Intl.Collator(language)
+  (language: string | undefined) => new Intl.Collator(language),
 );
 
 const caseInsensitiveCollator = memoizeOne(
   (language: string | undefined) =>
-    new Intl.Collator(language, { sensitivity: "accent" })
+    new Intl.Collator(language, { sensitivity: "accent" }),
 );
 
 const fallbackStringCompare = (a: string, b: string) => {
@@ -23,7 +23,7 @@ const fallbackStringCompare = (a: string, b: string) => {
 export const stringCompare = (
   a: string,
   b: string,
-  language: string | undefined = undefined
+  language: string | undefined = undefined,
 ) => {
   // @ts-ignore
   if (Intl?.Collator) {
@@ -36,7 +36,7 @@ export const stringCompare = (
 export const caseInsensitiveStringCompare = (
   a: string,
   b: string,
-  language: string | undefined = undefined
+  language: string | undefined = undefined,
 ) => {
   // @ts-ignore
   if (Intl?.Collator) {

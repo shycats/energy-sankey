@@ -13,7 +13,7 @@ export class HaElecSankeyExtra extends HaElecSankey {
     _topLeftY: number,
     _width: number,
     _color: string,
-    _route: ElecRoute
+    _route: ElecRoute,
   ): TemplateResult {
     const rect = renderRect(
       0,
@@ -21,7 +21,7 @@ export class HaElecSankeyExtra extends HaElecSankey {
       this._getExtrasLength(),
       _width,
       "extra",
-      _color
+      _color,
     );
     return svg`
       ${rect}

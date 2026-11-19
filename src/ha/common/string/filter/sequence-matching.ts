@@ -13,7 +13,7 @@ import { fuzzyScore } from "./filter";
 
 export const fuzzySequentialMatch = (
   filter: string,
-  item: ScorableTextItem
+  item: ScorableTextItem,
 ) => {
   let topScore = Number.NEGATIVE_INFINITY;
 
@@ -25,7 +25,7 @@ export const fuzzySequentialMatch = (
       word,
       stripDiacritics(word.toLowerCase()),
       0,
-      true
+      true,
     );
 
     if (!scores) {
@@ -69,7 +69,7 @@ export interface ScorableTextItem {
 
 type FuzzyFilterSort = <T extends ScorableTextItem>(
   filter: string,
-  items: T[]
+  items: T[],
 ) => T[];
 
 export const fuzzyFilterSort: FuzzyFilterSort = (filter, items) =>
@@ -80,5 +80,5 @@ export const fuzzyFilterSort: FuzzyFilterSort = (filter, items) =>
     })
     .filter((item) => item.score !== undefined)
     .sort(({ score: scoreA = 0 }, { score: scoreB = 0 }) =>
-      scoreA > scoreB ? -1 : scoreA < scoreB ? 1 : 0
+      scoreA > scoreB ? -1 : scoreA < scoreB ? 1 : 0,
     );

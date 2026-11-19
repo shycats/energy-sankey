@@ -30,7 +30,7 @@ export interface InputSelectMutableParams {
 export const setInputSelectOption = (
   hass: HomeAssistant,
   entity: string,
-  option: string
+  option: string,
 ) =>
   hass.callService("input_select", "select_option", {
     option,
@@ -42,7 +42,7 @@ export const fetchInputSelect = (hass: HomeAssistant) =>
 
 export const createInputSelect = (
   hass: HomeAssistant,
-  values: InputSelectMutableParams
+  values: InputSelectMutableParams,
 ) =>
   hass.callWS<InputSelect>({
     type: "input_select/create",
@@ -52,7 +52,7 @@ export const createInputSelect = (
 export const updateInputSelect = (
   hass: HomeAssistant,
   id: string,
-  updates: Partial<InputSelectMutableParams>
+  updates: Partial<InputSelectMutableParams>,
 ) =>
   hass.callWS<InputSelect>({
     type: "input_select/update",

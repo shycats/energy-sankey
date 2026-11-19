@@ -105,7 +105,7 @@ export class EnergyElecFlowCard
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
     await import("./energy-elec-flow-card-editor");
     return document.createElement(
-      ENERGY_CARD_EDITOR_NAME
+      ENERGY_CARD_EDITOR_NAME,
     ) as LovelaceCardEditor;
   }
 
@@ -165,7 +165,7 @@ export class EnergyElecFlowCard
   private async _getStatistics(energyData: EnergyData): Promise<void> {
     const solarSources: SolarSourceTypeEnergyPreference[] =
       energyData.prefs.energy_sources.filter(
-        (source) => source.type === "solar"
+        (source) => source.type === "solar",
       ) as SolarSourceTypeEnergyPreference[];
 
     const prefs = energyData.prefs;
@@ -174,10 +174,9 @@ export class EnergyElecFlowCard
     if (types.grid && types.grid.length > 0) {
       if (types.grid[0].stat_energy_from) {
         const totalFromGrid =
-          calculateStatisticsSumGrowth(
-            energyData.stats,
-            [types.grid[0].stat_energy_from]
-          ) ?? 0;
+          calculateStatisticsSumGrowth(energyData.stats, [
+            types.grid[0].stat_energy_from,
+          ]) ?? 0;
         const gridInId = types.grid[0].stat_energy_from;
         this._gridInRoute = {
           id: gridInId,
@@ -186,10 +185,9 @@ export class EnergyElecFlowCard
       }
       if (types.grid[0].stat_energy_to) {
         const totalToGrid =
-          calculateStatisticsSumGrowth(
-            energyData.stats,
-            [types.grid[0].stat_energy_to]
-          ) ?? 0;
+          calculateStatisticsSumGrowth(energyData.stats, [
+            types.grid[0].stat_energy_to,
+          ]) ?? 0;
         const gridOutId = types.grid[0].stat_energy_to;
         this._gridOutRoute = {
           id: gridOutId,
@@ -202,7 +200,7 @@ export class EnergyElecFlowCard
       const label = getStatisticLabel(
         this.hass,
         source.stat_energy_from,
-        undefined
+        undefined,
       );
 
       const value = calculateStatisticsSumGrowth(energyData.stats, [
@@ -255,14 +253,14 @@ export class EnergyElecFlowCard
 
     const batteries: BatterySourceTypeEnergyPreference[] =
       energyData.prefs.energy_sources.filter(
-        (source) => source.type === "battery"
+        (source) => source.type === "battery",
       ) as BatterySourceTypeEnergyPreference[];
 
     batteries.forEach((battery) => {
       const label = getStatisticLabel(
         this.hass,
         battery.stat_energy_from,
-        undefined
+        undefined,
       );
       const inToSystem = calculateStatisticsSumGrowth(energyData.stats, [
         battery.stat_energy_from,

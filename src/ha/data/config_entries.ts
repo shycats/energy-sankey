@@ -80,7 +80,7 @@ export const getConfigEntries = (
   filters?: {
     type?: IntegrationType[];
     domain?: string;
-  }
+  },
 ): Promise<ConfigEntry[]> => {
   const params: any = {};
   if (filters) {

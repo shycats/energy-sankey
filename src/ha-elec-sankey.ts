@@ -61,7 +61,7 @@ export class HaElecSankey extends ElecSankey {
     displayClass: string | undefined = undefined,
     showLeftValue: boolean = true,
     topValue: LabelTopValue | undefined = undefined,
-    outline: boolean = false
+    outline: boolean = false,
   ): TemplateResult {
     const _id = id || "";
     // With a name (consumers), the icon goes to the side of the name and
@@ -82,7 +82,7 @@ export class HaElecSankey extends ElecSankey {
       valueBColor,
       displayClass,
       showLeftValue,
-      numFractionDigits
+      numFractionDigits,
     );
     // Shown above the icon. Its own id lets a click open the more-info
     // dialog of that value's entity (e.g. the battery level sensor).
@@ -121,7 +121,7 @@ export class HaElecSankey extends ElecSankey {
     valueBColor: string | undefined,
     displayClass: string | undefined,
     showLeftValue: boolean,
-    numFractionDigits: number
+    numFractionDigits: number,
   ): TemplateResult {
     const format = (value: number) =>
       formatNumber(value, this.hass.locale, {
@@ -130,7 +130,7 @@ export class HaElecSankey extends ElecSankey {
     const directionSpan = (
       direction: "left" | "right",
       value: number,
-      color: string | undefined
+      color: string | undefined,
     ) =>
       // prettier-ignore
       html`<span

@@ -35,17 +35,17 @@ const fetchThemes = (conn) =>
 const subscribeUpdates = (conn, store) =>
   conn.subscribeEvents(
     () => fetchThemes(conn).then((data) => store.setState(data, true)),
-    "themes_updated"
+    "themes_updated",
   );
 
 export const subscribeThemes = (
   conn: Connection,
-  onChange: (themes: Themes) => void
+  onChange: (themes: Themes) => void,
 ) =>
   createCollection<Themes>(
     "_thm",
     fetchThemes,
     subscribeUpdates,
     conn,
-    onChange
+    onChange,
   );

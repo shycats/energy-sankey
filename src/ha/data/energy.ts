@@ -238,7 +238,7 @@ export const getEnergyPreferences = (hass: HomeAssistant) =>
 
 export const saveEnergyPreferences = async (
   hass: HomeAssistant,
-  prefs: Partial<EnergyPreferences>
+  prefs: Partial<EnergyPreferences>,
 ) => {
   const newPrefs = hass.callWS<EnergyPreferences>({
     type: "energy/save_prefs",
@@ -256,7 +256,7 @@ export const getFossilEnergyConsumption = async (
   energy_statistic_ids: string[],
   co2_statistic_id: string,
   endTime?: Date,
-  period: "5minute" | "hour" | "day" | "month" = "hour"
+  period: "5minute" | "hour" | "day" | "month" = "hour",
 ) =>
   hass.callWS<FossilEnergyConsumption>({
     type: "energy/fossil_energy_consumption",
@@ -299,7 +299,7 @@ export interface EnergyData {
 export const getReferencedStatisticIds = (
   prefs: EnergyPreferences,
   info: EnergyInfo,
-  includeTypes?: string[]
+  includeTypes?: string[],
 ): string[] => {
   const statIDs: string[] = [];
 
@@ -360,7 +360,7 @@ export const getReferencedStatisticIds = (
   }
   if (!(includeTypes && !includeTypes.includes("water"))) {
     statIDs.push(
-      ...prefs.device_consumption_water.map((d) => d.stat_consumption)
+      ...prefs.device_consumption_water.map((d) => d.stat_consumption),
     );
   }
 
@@ -368,7 +368,7 @@ export const getReferencedStatisticIds = (
 };
 
 export const getReferencedStatisticIdsPower = (
-  prefs: EnergyPreferences
+  prefs: EnergyPreferences,
 ): string[] => {
   const statIDs: (string | undefined)[] = [];
 
@@ -414,7 +414,7 @@ const getEnergyData = async (
   prefs: EnergyPreferences,
   start: Date,
   end?: Date,
-  compare?: CompareMode
+  compare?: CompareMode,
 ): Promise<EnergyData> => {
   const info = await getEnergyInfo(hass);
 
@@ -523,13 +523,13 @@ const getEnergyData = async (
           start,
           isFirstDayOfMonth,
           hass.locale,
-          hass.config
+          hass.config,
         ) as boolean) &&
         (calcDateProperty(
           end || new Date(),
           isLastDayOfMonth,
           hass.locale,
-          hass.config
+          hass.config,
         ) as boolean)
       ) {
         // When comparing a month (or multiple), we want to start at the beginning of the month
@@ -543,8 +543,8 @@ const getEnergyData = async (
             start,
             differenceInMonths,
             hass.locale,
-            hass.config
-          ) as number) - 1
+            hass.config,
+          ) as number) - 1,
         );
       } else {
         startCompare = calcDate(
@@ -552,7 +552,7 @@ const getEnergyData = async (
           addDays,
           hass.locale,
           hass.config,
-          (dayDifference + 1) * -1
+          (dayDifference + 1) * -1,
         );
       }
       endCompare = addMilliseconds(start, -1);
@@ -568,7 +568,7 @@ const getEnergyData = async (
         energyStatIds,
         period,
         energyUnits,
-        ["change"]
+        ["change"],
       );
     }
     if (waterStatIds.length) {
@@ -579,7 +579,7 @@ const getEnergyData = async (
         waterStatIds,
         period,
         waterUnits,
-        ["change"]
+        ["change"],
       );
     }
   }
@@ -595,7 +595,7 @@ const getEnergyData = async (
       consumptionStatIDs,
       co2SignalEntity,
       end,
-      period
+      period,
     );
     if (compare) {
       _fossilEnergyConsumptionCompare = getFossilEnergyConsumption(
@@ -604,7 +604,7 @@ const getEnergyData = async (
         consumptionStatIDs,
         co2SignalEntity,
         endCompare,
-        period
+        period,
       );
     }
   }
@@ -725,14 +725,14 @@ const scheduleHourlyRefresh = (collection: EnergyCollection) => {
 
     collection._refreshTimeout = window.setTimeout(
       () => collection.refresh(),
-      nextFetch.getTime() - Date.now()
+      nextFetch.getTime() - Date.now(),
     );
   }
 };
 
 export const getEnergyDataCollection = (
   hass: HomeAssistant,
-  options: { prefs?: EnergyPreferences; key?: string } = {}
+  options: { prefs?: EnergyPreferences; key?: string } = {},
 ): EnergyCollection => {
   let key = "_energy";
   if (options.key) {
@@ -765,9 +765,9 @@ export const getEnergyDataCollection = (
         collection.prefs,
         collection.start,
         collection.end,
-        collection.compare
+        collection.compare,
       );
-    }
+    },
   ) as EnergyCollection;
 
   const origSubscribe = collection.subscribe;
@@ -813,21 +813,21 @@ export const getEnergyDataCollection = (
           new Date(),
           startOfDay,
           hass.locale,
-          hass.config
+          hass.config,
         );
         collection.end = calcDate(
           new Date(),
           endOfDay,
           hass.locale,
-          hass.config
+          hass.config,
         );
         collection.refresh();
         scheduleUpdatePeriod();
       },
       addHours(
         calcDate(new Date(), endOfDay, hass.locale, hass.config),
-        1
-      ).getTime() - Date.now() // Switch to next day an hour after the day changed
+        1,
+      ).getTime() - Date.now(), // Switch to next day an hour after the day changed
     );
   };
   scheduleUpdatePeriod();
@@ -868,7 +868,7 @@ export type EnergyGasUnitClass = (typeof energyGasUnitClass)[number];
 export const getEnergyGasUnitClass = (
   prefs: EnergyPreferences,
   excludeSource?: string,
-  statisticsMetaData: Record<string, StatisticsMetaData> = {}
+  statisticsMetaData: Record<string, StatisticsMetaData> = {},
 ): EnergyGasUnitClass | undefined => {
   for (const source of prefs.energy_sources) {
     if (source.type !== "gas") {
@@ -880,7 +880,7 @@ export const getEnergyGasUnitClass = (
     const statisticIdWithMeta = statisticsMetaData[source.stat_energy_from];
     if (
       energyGasUnitClass.includes(
-        statisticIdWithMeta?.unit_class as EnergyGasUnitClass
+        statisticIdWithMeta?.unit_class as EnergyGasUnitClass,
       )
     ) {
       return statisticIdWithMeta.unit_class as EnergyGasUnitClass;
@@ -892,7 +892,7 @@ export const getEnergyGasUnitClass = (
 const getEnergyGasUnit = (
   hass: HomeAssistant,
   prefs: EnergyPreferences,
-  statisticsMetaData: Record<string, StatisticsMetaData> = {}
+  statisticsMetaData: Record<string, StatisticsMetaData> = {},
 ): string => {
   const unitClass = getEnergyGasUnitClass(prefs, undefined, statisticsMetaData);
   if (unitClass === "energy") {
@@ -905,8 +905,8 @@ const getEnergyGasUnit = (
       getDisplayUnit(
         hass,
         s.stat_energy_from,
-        statisticsMetaData[s.stat_energy_from]
-      )
+        statisticsMetaData[s.stat_energy_from],
+      ),
     );
   if (units.length) {
     const first = units[0];
@@ -924,7 +924,7 @@ const getEnergyGasUnit = (
 const getEnergyWaterUnit = (
   hass: HomeAssistant,
   prefs: EnergyPreferences,
-  statisticsMetaData: Record<string, StatisticsMetaData>
+  statisticsMetaData: Record<string, StatisticsMetaData>,
 ): (typeof VOLUME_UNITS)[number] => {
   const units = prefs.energy_sources
     .filter((s) => s.type === "water")
@@ -932,8 +932,8 @@ const getEnergyWaterUnit = (
       getDisplayUnit(
         hass,
         s.stat_energy_from,
-        statisticsMetaData[s.stat_energy_from]
-      )
+        statisticsMetaData[s.stat_energy_from],
+      ),
     );
   if (units.length) {
     const first = units[0];
@@ -990,19 +990,19 @@ export interface EnergyConsumptionData {
 
 export const getSummedData = memoizeOne(
   (
-    data: EnergyData
+    data: EnergyData,
   ): { summedData: EnergySumData; compareSummedData?: EnergySumData } => {
     const summedData = getSummedDataPartial(data);
     const compareSummedData = data.statsCompare
       ? getSummedDataPartial(data, true)
       : undefined;
     return { summedData, compareSummedData };
-  }
+  },
 );
 
 const getSummedDataPartial = (
   data: EnergyData,
-  compare?: boolean
+  compare?: boolean,
 ): EnergySumData => {
   const statIds: {
     to_grid?: string[];
@@ -1090,7 +1090,7 @@ const getSummedDataPartial = (
 export const computeConsumptionData = memoizeOne(
   (
     data: EnergySumData,
-    compareData?: EnergySumData
+    compareData?: EnergySumData,
   ): {
     consumption: EnergyConsumptionData;
     compareConsumption?: EnergyConsumptionData;
@@ -1100,11 +1100,11 @@ export const computeConsumptionData = memoizeOne(
       ? computeConsumptionDataPartial(compareData)
       : undefined;
     return { consumption, compareConsumption };
-  }
+  },
 );
 
 const computeConsumptionDataPartial = (
-  data: EnergySumData
+  data: EnergySumData,
 ): EnergyConsumptionData => {
   const outData: EnergyConsumptionData = {
     used_total: {},
@@ -1218,7 +1218,7 @@ export const computeConsumptionSingle = (data: {
   // input could be stranded with nowhere to go.
   const excess_grid_in_after_consumption = Math.max(
     0,
-    Math.min(to_battery, from_grid - used_total_remaining)
+    Math.min(to_battery, from_grid - used_total_remaining),
   );
   grid_to_battery += excess_grid_in_after_consumption;
   to_battery -= excess_grid_in_after_consumption;
@@ -1277,7 +1277,7 @@ export const formatConsumptionShort = (
   hass: HomeAssistant,
   consumption: number | null,
   unit: string,
-  targetUnit?: string
+  targetUnit?: string,
 ): string => {
   const units = ["Wh", "kWh", "MWh", "GWh", "TWh"];
   let pickedUnit = unit;
@@ -1318,14 +1318,14 @@ export const formatConsumptionShort = (
 
 export const calculateSolarConsumedGauge = (
   hasBattery: boolean,
-  data: EnergySumData
+  data: EnergySumData,
 ): number | undefined => {
   if (!data.total.solar) {
     return undefined;
   }
   const { consumption, compareConsumption: _ } = computeConsumptionData(
     data,
-    undefined
+    undefined,
   );
   if (!hasBattery) {
     const solarProduction = data.total.solar;
@@ -1440,7 +1440,7 @@ const FLOW_RATE_TO_LMIN: Record<string, number> = {
  * @returns Flow rate in L/min, or undefined if unavailable/invalid.
  */
 export const getFlowRateFromState = (
-  stateObj?: HassEntity
+  stateObj?: HassEntity,
 ): number | undefined => {
   if (!stateObj) {
     return undefined;
@@ -1465,7 +1465,7 @@ export const getFlowRateFromState = (
 export const formatFlowRateShort = (
   hassLocale: HomeAssistant["locale"],
   lengthUnitSystem: string,
-  litersPerMin: number
+  litersPerMin: number,
 ): string => {
   const isMetric = lengthUnitSystem === "km";
   if (isMetric) {
@@ -1491,7 +1491,7 @@ export const getPowerFromState = (stateObj: HassEntity): number | undefined => {
 
   return normalizeValueBySIPrefix(
     value,
-    stateObj.attributes.unit_of_measurement
+    stateObj.attributes.unit_of_measurement,
   );
 };
 
@@ -1503,7 +1503,7 @@ export const getPowerFromState = (stateObj: HassEntity): number | undefined => {
  */
 export const formatPowerShort = (
   hass: HomeAssistant,
-  powerWatts: number
+  powerWatts: number,
 ): string => {
   const units = ["W", "kW", "MW", "GW", "TW"];
   let unitIndex = 0;
@@ -1528,7 +1528,7 @@ export const formatPowerShort = (
 export function getSuggestedPeriod(
   start: Date,
   end?: Date,
-  fine = false
+  fine = false,
 ): "5minute" | "hour" | "day" | "month" {
   const dayDifference = differenceInDays(end || new Date(), start);
 

@@ -15,14 +15,14 @@ export const isNumericState = (stateObj: HassEntity): boolean =>
 
 export const isNumericFromAttributes = (
   attributes: HassEntityAttributeBase,
-  numericDeviceClasses?: string[]
+  numericDeviceClasses?: string[],
 ): boolean =>
   !!attributes.unit_of_measurement ||
   !!attributes.state_class ||
   (numericDeviceClasses || []).includes(attributes.device_class || "");
 
 export const numberFormatToLocale = (
-  localeOptions: FrontendLocaleData
+  localeOptions: FrontendLocaleData,
 ): string | string[] | undefined => {
   switch (localeOptions.number_format) {
     case NumberFormat.comma_decimal:
@@ -48,7 +48,7 @@ export const numberFormatToLocale = (
 export const formatNumber = (
   num: string | number,
   localeOptions?: FrontendLocaleData,
-  options?: Intl.NumberFormatOptions
+  options?: Intl.NumberFormatOptions,
 ): string => {
   const locale = localeOptions
     ? numberFormatToLocale(localeOptions)
@@ -67,7 +67,7 @@ export const formatNumber = (
   ) {
     return new Intl.NumberFormat(
       locale,
-      getDefaultFormatOptions(num, options)
+      getDefaultFormatOptions(num, options),
     ).format(Number(num));
   }
 
@@ -82,7 +82,7 @@ export const formatNumber = (
       getDefaultFormatOptions(num, {
         ...options,
         useGrouping: false,
-      })
+      }),
     ).format(Number(num));
   }
 
@@ -101,7 +101,7 @@ export const formatNumber = (
  */
 export const getNumberFormatOptions = (
   entityState?: HassEntity,
-  entity?: EntityRegistryDisplayEntry
+  entity?: EntityRegistryDisplayEntry,
 ): Intl.NumberFormatOptions | undefined => {
   const precision = entity?.display_precision;
   if (precision != null) {
@@ -126,7 +126,7 @@ export const getNumberFormatOptions = (
  */
 export const getDefaultFormatOptions = (
   num: string | number,
-  options?: Intl.NumberFormatOptions
+  options?: Intl.NumberFormatOptions,
 ): Intl.NumberFormatOptions => {
   const defaultOptions: Intl.NumberFormatOptions = {
     maximumFractionDigits: 2,

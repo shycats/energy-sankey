@@ -46,7 +46,7 @@ export interface WebRtcAnswer {
 export const cameraUrlWithWidthHeight = (
   base_url: string,
   width: number,
-  height: number
+  height: number,
 ) => `${base_url}&width=${width}&height=${height}`;
 
 export const computeMJPEGStreamUrl = (entity: CameraEntity) =>
@@ -56,21 +56,21 @@ export const fetchThumbnailUrlWithCache = async (
   hass: HomeAssistant,
   entityId: string,
   width: number,
-  height: number
+  height: number,
 ) => {
   const base_url = await timeCacheEntityPromiseFunc(
     "_cameraTmbUrl",
     9000,
     fetchThumbnailUrl,
     hass,
-    entityId
+    entityId,
   );
   return cameraUrlWithWidthHeight(base_url, width, height);
 };
 
 export const fetchThumbnailUrl = async (
   hass: HomeAssistant,
-  entityId: string
+  entityId: string,
 ) => {
   const path = await getSignedPath(hass, `/api/camera_proxy/${entityId}`);
   return hass.hassUrl(path.path);
@@ -79,7 +79,7 @@ export const fetchThumbnailUrl = async (
 export const fetchStreamUrl = async (
   hass: HomeAssistant,
   entityId: string,
-  format?: "hls"
+  format?: "hls",
 ) => {
   const data = {
     type: "camera/stream",
@@ -97,7 +97,7 @@ export const fetchStreamUrl = async (
 export const handleWebRtcOffer = (
   hass: HomeAssistant,
   entityId: string,
-  offer: string
+  offer: string,
 ) =>
   hass.callWS<WebRtcAnswer>({
     type: "camera/web_rtc_offer",
@@ -118,7 +118,7 @@ export const updateCameraPrefs = (
   prefs: {
     preload_stream?: boolean;
     orientation?: ValueOf<typeof CAMERA_ORIENTATIONS>;
-  }
+  },
 ) =>
   hass.callWS<CameraPreferences>({
     type: "camera/update_prefs",

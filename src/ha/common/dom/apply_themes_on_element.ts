@@ -32,7 +32,7 @@ export const applyThemesOnElement = (
   themes: HomeAssistant["themes"],
   selectedTheme?: string,
   themeSettings?: Partial<HomeAssistant["selectedTheme"]>,
-  main?: boolean
+  main?: boolean,
 ) => {
   // If there is no explicitly desired theme provided, and the element is the main element we automatically
   // use the active one from `themes`.
@@ -150,7 +150,7 @@ export const applyThemesOnElement = (
 
 const processTheme = (
   cacheKey: string,
-  theme: Partial<ThemeVars>
+  theme: Partial<ThemeVars>,
 ): ProcessedTheme | undefined => {
   if (!theme || !Object.keys(theme).length) {
     return undefined;

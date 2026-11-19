@@ -58,7 +58,7 @@ export interface AndCondition extends BaseCondition {
 
 function getValueFromEntityId(
   hass: HomeAssistant,
-  value: string
+  value: string,
 ): string | undefined {
   if (isValidEntityId(value) && hass.states[value]) {
     return hass.states[value]?.state;
@@ -68,7 +68,7 @@ function getValueFromEntityId(
 
 function checkStateCondition(
   condition: StateCondition | LegacyCondition,
-  hass: HomeAssistant
+  hass: HomeAssistant,
 ) {
   const state =
     condition.entity && hass.states[condition.entity]
@@ -97,7 +97,7 @@ function checkStateCondition(
 
 function checkStateNumericCondition(
   condition: NumericStateCondition,
-  hass: HomeAssistant
+  hass: HomeAssistant,
 ) {
   const state = (condition.entity ? hass.states[condition.entity] : undefined)
     ?.state;
@@ -160,7 +160,7 @@ function checkOrCondition(condition: OrCondition, hass: HomeAssistant) {
  */
 export function checkConditionsMet(
   conditions: (Condition | LegacyCondition)[],
-  hass: HomeAssistant
+  hass: HomeAssistant,
 ): boolean {
   return conditions.every((c) => {
     if ("condition" in c) {
@@ -184,7 +184,7 @@ export function checkConditionsMet(
 }
 
 export function extractConditionEntityIds(
-  conditions: Condition[]
+  conditions: Condition[],
 ): Set<string> {
   const entityIds: Set<string> = new Set();
   for (const condition of conditions) {
@@ -255,7 +255,7 @@ function validateNumericStateCondition(condition: NumericStateCondition) {
  * @returns true if conditions are validated
  */
 export function validateConditionalConfig(
-  conditions: (Condition | LegacyCondition)[]
+  conditions: (Condition | LegacyCondition)[],
 ): boolean {
   return conditions.every((c) => {
     if ("condition" in c) {
@@ -286,13 +286,13 @@ export function validateConditionalConfig(
  */
 export function addEntityToCondition(
   condition: Condition,
-  entityId: string
+  entityId: string,
 ): Condition {
   if ("conditions" in condition && condition.conditions) {
     return {
       ...condition,
       conditions: condition.conditions.map((c) =>
-        addEntityToCondition(c, entityId)
+        addEntityToCondition(c, entityId),
       ),
     };
   }

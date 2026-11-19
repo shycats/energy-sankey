@@ -8,7 +8,7 @@ export interface HassSubscribeElement {
 }
 
 export const SubscribeMixin = <T extends Constructor<ReactiveElement>>(
-  superClass: T
+  superClass: T,
 ) => {
   class SubscribeClass extends superClass {
     @property({ attribute: false }) public hass?: HomeAssistant;
@@ -67,7 +67,7 @@ export const SubscribeMixin = <T extends Constructor<ReactiveElement>>(
         !(this as unknown as Element).isConnected ||
         this.hass === undefined ||
         this.hassSubscribeRequiredHostProps?.some(
-          (prop) => this[prop] === undefined
+          (prop) => this[prop] === undefined,
         )
       ) {
         return;

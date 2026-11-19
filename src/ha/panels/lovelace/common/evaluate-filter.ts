@@ -23,7 +23,7 @@ export type LegacyStateFilter =
 
 export const evaluateStateFilter = (
   stateObj: HassEntity,
-  filter: LegacyStateFilter
+  filter: LegacyStateFilter,
 ): boolean => {
   let operator: FilterOperator;
   let value: string | number | (string | number)[];

@@ -6,7 +6,7 @@ export const processConfigEntities = <
   T extends EntityConfig | LovelaceRowConfig,
 >(
   entities: Array<T | string>,
-  checkEntityId = true
+  checkEntityId = true,
 ): T[] => {
   if (!entities || !Array.isArray(entities)) {
     throw new Error("Entities need to be an array");
@@ -38,7 +38,7 @@ export const processConfigEntities = <
       throw new Error(
         `Invalid entity ID at position ${index}: ${
           (config as EntityConfig).entity
-        }`
+        }`,
       );
     }
 

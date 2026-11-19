@@ -47,6 +47,7 @@ const POWER_LABELS = [
   "generation_color",
   "unknown_source_icon",
   "unknown_source_color",
+  "unknown_source_to_grid",
   "grid_outline",
   "generation_outline",
 ];
@@ -69,6 +70,7 @@ const OPTIONAL_FLAG_FIELDS = [
   "grid_outline",
   "generation_outline",
   "show_total_consumption",
+  "unknown_source_to_grid",
 ] as const;
 
 @customElement(POWER_CARD_EDITOR_NAME)
@@ -160,6 +162,7 @@ export class PowerFlowCardEditor
             selector: { icon: { placeholder: "mdi:help-rhombus" } },
           },
           { name: "unknown_source_color", selector: { text: {} } },
+          { name: "unknown_source_to_grid", selector: { boolean: {} } },
           {
             name: "max_power",
             selector: {
@@ -215,10 +218,10 @@ export class PowerFlowCardEditor
   public setConfig(config: PowerFlowCardConfig): void {
     this._config = verifyAndMigrateConfig(config);
     this._configBatteryEntities = processEditorEntities(
-      this._config.battery_entities || []
+      this._config.battery_entities || [],
     );
     this._configConsumerEntities = processEditorEntities(
-      this._config.consumer_entities
+      this._config.consumer_entities,
     );
   }
 
@@ -232,7 +235,7 @@ export class PowerFlowCardEditor
       return customLocalize(`editor.card.power_sankey.${schema.name}`);
     }
     return this.hass!.localize(
-      `ui.panel.lovelace.editor.card.generic.${schema.name}`
+      `ui.panel.lovelace.editor.card.generic.${schema.name}`,
     );
   };
 
@@ -281,7 +284,9 @@ export class PowerFlowCardEditor
         showColorField
         colorLabel=${customLocalize(`editor.card.power_sankey.entity_color`)}
         showOutlineField
-        outlineLabel=${customLocalize(`editor.card.power_sankey.entity_outline`)}
+        outlineLabel=${customLocalize(
+          `editor.card.power_sankey.entity_outline`,
+        )}
         @entities-changed=${this._valueChanged}
       ></elec-sankey-hui-entities-card-row-editor>
       <elec-sankey-hui-entities-card-row-editor
@@ -297,7 +302,9 @@ export class PowerFlowCardEditor
         showColorField
         colorLabel=${customLocalize(`editor.card.power_sankey.entity_color`)}
         showOutlineField
-        outlineLabel=${customLocalize(`editor.card.power_sankey.entity_outline`)}
+        outlineLabel=${customLocalize(
+          `editor.card.power_sankey.entity_outline`,
+        )}
         @entities-changed=${this._valueChanged}
         @edit-detail-element=${this._editDetailElement}
       ></elec-sankey-hui-entities-card-row-editor>
@@ -315,14 +322,14 @@ export class PowerFlowCardEditor
   /** Returns the optional flag key that differs between value and config. */
   private _changedFlagField(value: any): string | undefined {
     return OPTIONAL_FLAG_FIELDS.find(
-      (key) => !!value[key] !== !!this._config![key]
+      (key) => !!value[key] !== !!this._config![key],
     );
   }
 
   /** Returns the optional string key that differs between value and config. */
   private _changedOptionalField(value: any): string | undefined {
     return OPTIONAL_STRING_FIELDS.find(
-      (key) => (value[key] || "") !== (this._config![key] || "")
+      (key) => (value[key] || "") !== (this._config![key] || ""),
     );
   }
 
@@ -437,7 +444,7 @@ export class PowerFlowCardEditor
           consumer_entities: newConfigEntities,
         };
         this._configConsumerEntities = processEditorEntities(
-          this._config!.consumer_entities
+          this._config!.consumer_entities,
         );
       } else if (
         ev.currentTarget &&
@@ -448,7 +455,7 @@ export class PowerFlowCardEditor
           battery_entities: newConfigEntities,
         };
         this._configBatteryEntities = processEditorEntities(
-          this._config!.battery_entities || []
+          this._config!.battery_entities || [],
         );
       }
     } else if (configValue) {

@@ -58,7 +58,7 @@ registerStyles(
     [part="checkmark"] {
       display: none;
     }
-  `
+  `,
 );
 
 @customElement("ha-combo-box")
@@ -188,7 +188,7 @@ export class HaComboBox extends LitElement {
           <slot name="icon" slot="leadingIcon"></slot>
         </ha-textfield>
         ${this.value
-        ? html`<ha-svg-icon
+          ? html`<ha-svg-icon
               role="button"
               tabindex="-1"
               aria-label=${ifDefined(this.hass?.localize("ui.common.clear"))}
@@ -196,7 +196,7 @@ export class HaComboBox extends LitElement {
               .path=${mdiClose}
               @click=${this._clearValue}
             ></ha-svg-icon>`
-        : ""}
+          : ""}
         <ha-svg-icon
           role="button"
           tabindex="-1"
@@ -213,7 +213,7 @@ export class HaComboBox extends LitElement {
   private _defaultRowRenderer: ComboBoxLitRenderer<
     string | Record<string, any>
   > = (item) =>
-      html`<ha-list-item>
+    html`<ha-list-item>
       ${this.itemLabelPath ? item[this.itemLabelPath] : item}
     </ha-list-item>`;
 
@@ -242,7 +242,7 @@ export class HaComboBox extends LitElement {
 
     if (opened) {
       const overlay = document.querySelector<HTMLElement>(
-        "vaadin-combo-box-overlay"
+        "vaadin-combo-box-overlay",
       );
 
       if (overlay) {

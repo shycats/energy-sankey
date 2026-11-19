@@ -6,6 +6,5 @@ export interface SignedPath {
 
 export const getSignedPath = (
   hass: HomeAssistant,
-  path: string
+  path: string,
 ): Promise<SignedPath> => hass.callWS({ type: "auth/sign_path", path });
-

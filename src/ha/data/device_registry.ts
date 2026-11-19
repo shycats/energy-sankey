@@ -18,4 +18,3 @@ export interface DeviceRegistryEntry {
   disabled_by: "user" | "integration" | "config_entry" | null;
   configuration_url: string | null;
 }
-

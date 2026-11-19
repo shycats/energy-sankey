@@ -93,10 +93,10 @@ export interface EditorTarget extends EventTarget {
 export interface SubElementEditorConfig {
   index?: number;
   elementConfig?:
-  | LovelaceRowConfig
-  // | LovelaceHeaderFooterConfig
-  // | LovelaceCardFeatureConfig
-  | LovelaceElementConfig
+    | LovelaceRowConfig
+    // | LovelaceHeaderFooterConfig
+    // | LovelaceCardFeatureConfig
+    | LovelaceElementConfig;
   // | LovelaceHeadingBadgeConfig;
   saveElementConfig?: (elementConfig: any) => void;
   context?: any;

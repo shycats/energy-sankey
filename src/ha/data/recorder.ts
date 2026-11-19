@@ -155,7 +155,7 @@ export const getRecorderInfo = (conn: Connection) =>
 
 export const getStatisticIds = (
   hass: HomeAssistant,
-  statistic_type?: "mean" | "sum"
+  statistic_type?: "mean" | "sum",
 ) =>
   hass.callWS<StatisticsMetaData[]>({
     type: "recorder/list_statistic_ids",
@@ -164,7 +164,7 @@ export const getStatisticIds = (
 
 export const getStatisticMetadata = (
   hass: HomeAssistant,
-  statistic_ids?: string[]
+  statistic_ids?: string[],
 ) =>
   hass.callWS<StatisticsMetaData[]>({
     type: "recorder/get_statistics_metadata",
@@ -178,7 +178,7 @@ export const fetchStatistics = (
   statistic_ids?: string[],
   period: StatisticPeriod = "hour",
   units?: StatisticsUnitConfiguration,
-  types?: StatisticsTypes
+  types?: StatisticsTypes,
 ) =>
   hass.callWS<Statistics>({
     type: "recorder/statistics_during_period",
@@ -198,7 +198,7 @@ export const fetchStatistic = (
     calendar?: { period: string; offset: number };
     rolling_window?: { duration: HaDurationData; offset: HaDurationData };
   },
-  units?: StatisticsUnitConfiguration
+  units?: StatisticsUnitConfiguration,
 ) =>
   hass.callWS<Statistic>({
     type: "recorder/statistic_during_period",
@@ -236,7 +236,7 @@ export const updateStatisticsMetadata = (
   hass: HomeAssistant,
   statistic_id: string,
   unit_of_measurement: string | null,
-  unit_class: string | null
+  unit_class: string | null,
 ) =>
   hass.callWS<undefined>({
     type: "recorder/update_statistics_metadata",
@@ -252,7 +252,7 @@ export const clearStatistics = (hass: HomeAssistant, statistic_ids: string[]) =>
   });
 
 export const calculateStatisticSumGrowth = (
-  values?: StatisticValue[]
+  values?: StatisticValue[],
 ): number | null => {
   let growth: number | null = null;
 
@@ -276,7 +276,7 @@ export const calculateStatisticSumGrowth = (
 
 export const calculateStatisticsSumGrowth = (
   data: Statistics,
-  stats: string[]
+  stats: string[],
 ): number | null => {
   let totalGrowth: number | null = null;
 
@@ -301,7 +301,7 @@ export const calculateStatisticsSumGrowth = (
 
 export const statisticsHaveType = (
   stats: StatisticValue[],
-  type: StatisticType
+  type: StatisticType,
 ) => stats.some((stat) => stat[type] !== undefined && stat[type] !== null);
 
 const mean_stat_types: readonly StatisticType[] = ["mean", "min", "max"];
@@ -309,7 +309,7 @@ const sum_stat_types: readonly StatisticType[] = ["sum", "state", "change"];
 
 export const statisticsMetaHasType = (
   metadata: StatisticsMetaData,
-  type: StatisticType
+  type: StatisticType,
 ) => {
   if (
     mean_stat_types.includes(type) &&
@@ -328,7 +328,7 @@ export const adjustStatisticsSum = (
   statistic_id: string,
   start_time: number,
   adjustment: number,
-  adjustment_unit_of_measurement: string | null
+  adjustment_unit_of_measurement: string | null,
 ): Promise<void> => {
   const start_time_iso = new Date(start_time).toISOString();
   return hass.callWS<undefined>({
@@ -343,7 +343,7 @@ export const adjustStatisticsSum = (
 export const getStatisticLabel = (
   hass: HomeAssistant,
   statisticsId: string,
-  statisticsMetaData: StatisticsMetaData | undefined
+  statisticsMetaData: StatisticsMetaData | undefined,
 ): string => {
   const entity = hass.states[statisticsId];
   if (entity) {
@@ -355,7 +355,7 @@ export const getStatisticLabel = (
 export const getDisplayUnit = (
   hass: HomeAssistant,
   statisticsId: string | undefined,
-  statisticsMetaData: StatisticsMetaData | undefined
+  statisticsMetaData: StatisticsMetaData | undefined,
 ): string | null | undefined => {
   let unit: string | undefined;
   if (statisticsId) {

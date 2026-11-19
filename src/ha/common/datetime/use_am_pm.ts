@@ -9,7 +9,7 @@ export const useAmPm = memoizeOne((locale: FrontendLocaleData): boolean => {
     const testLanguage =
       locale.time_format === TimeFormat.language ? locale.language : undefined;
     const test = new Date("January 1, 2023 22:00:00").toLocaleString(
-      testLanguage
+      testLanguage,
     );
     return test.includes("10");
   }

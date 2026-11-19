@@ -40,6 +40,7 @@
         "untracked_icon": "Untracked power icon (optional)",
         "unknown_source_icon": "Unknown generation icon (optional)",
         "unknown_source_color": "Unknown generation color: CSS color or template (optional)",
+        "unknown_source_to_grid": "Count unknown generation as grid power instead of showing it",
         "grid_secondary_entity": "Value shown above the grid icon (optional)",
         "generation_secondary_entity": "Value shown above the generation icon (optional)",
         "grid_color": "Grid color: CSS color or template (optional)",

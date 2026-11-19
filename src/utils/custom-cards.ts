@@ -16,5 +16,4 @@ export function registerCustomCard(params: RegisterCardParams) {
     preview: true,
     documentationURL: `${repository.url}/blob/main/README.md`,
   });
-
 }

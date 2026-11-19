@@ -76,7 +76,7 @@ export class EnergyFlowCardEditor
       return customLocalize(`editor.card.energy_sankey.${schema.name}`);
     }
     return this.hass!.localize(
-      `ui.panel.lovelace.editor.card.generic.${schema.name}`
+      `ui.panel.lovelace.editor.card.generic.${schema.name}`,
     );
   };
 

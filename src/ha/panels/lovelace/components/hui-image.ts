@@ -140,7 +140,7 @@ export class HuiImage extends LitElement {
       return nothing;
     }
     const useRatio = Boolean(
-      this._ratio && this._ratio.w > 0 && this._ratio.h > 0
+      this._ratio && this._ratio.w > 0 && this._ratio.h > 0,
     );
     const stateObj = this.entity ? this.hass.states[this.entity] : undefined;
     const entityState = stateObj ? stateObj.state : UNAVAILABLE;
@@ -284,7 +284,7 @@ export class HuiImage extends LitElement {
     if ("IntersectionObserver" in window) {
       if (!this._intersectionObserver) {
         this._intersectionObserver = new IntersectionObserver(
-          this.handleIntersectionCallback.bind(this)
+          this.handleIntersectionCallback.bind(this),
         );
       }
       this._intersectionObserver.observe(this);
@@ -308,7 +308,7 @@ export class HuiImage extends LitElement {
     if (this.cameraImage && this.isConnected) {
       this._cameraUpdater = window.setInterval(
         () => this._updateCameraImageSrcAtInterval(),
-        UPDATE_INTERVAL
+        UPDATE_INTERVAL,
       );
     }
   }
@@ -385,7 +385,7 @@ export class HuiImage extends LitElement {
       this.hass,
       this.cameraImage,
       width,
-      height
+      height,
     );
     if (this._cameraImageSrc === undefined) {
       this._onImageError();

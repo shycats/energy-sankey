@@ -128,7 +128,7 @@ function computePower(stateObj: HassEntity): number {
  */
 function secondaryValue(
   hass: HomeAssistant,
-  entityId: string | undefined
+  entityId: string | undefined,
 ): LabelTopValue | undefined {
   if (!entityId) {
     return undefined;
@@ -227,7 +227,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
   }
 
   private static async getExtendedEntityRegistryEntries(
-    _hass: HomeAssistant
+    _hass: HomeAssistant,
   ): Promise<{ [id: string]: ExtEntityRegistryEntry }> {
     // Get the full list of all extended entity registry entries as a dict.
 
@@ -247,7 +247,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
   private static async getPowerEntityIdForEnergyEntityId(
     _hass: HomeAssistant,
     energyEntityId: string,
-    extEntities: { [id: string]: ExtEntityRegistryEntry }
+    extEntities: { [id: string]: ExtEntityRegistryEntry },
   ): Promise<string> {
     /**
      * Given an energy entity ID, find the associated power entity ID.
@@ -301,7 +301,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
   private static async getPowerEntityIdForEnergyEntityIdWithFail(
     _hass: HomeAssistant,
     energyEntityId: string,
-    extEntities: { [id: string]: ExtEntityRegistryEntry }
+    extEntities: { [id: string]: ExtEntityRegistryEntry },
   ): Promise<string> {
     /**
      * Given an energy entity ID, find the associated power entity ID.
@@ -310,7 +310,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
     let powerEntityId = await this.getPowerEntityIdForEnergyEntityId(
       _hass,
       energyEntityId,
-      extEntities
+      extEntities,
     );
     if (!powerEntityId) {
       powerEntityId =
@@ -320,7 +320,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
   }
 
   public static async getStubConfig(
-    _hass: HomeAssistant
+    _hass: HomeAssistant,
   ): Promise<PowerFlowCardConfig> {
     /**
      * We go on a bit of a hunt to get the stub config.
@@ -348,7 +348,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
             await this.getPowerEntityIdForEnergyEntityIdWithFail(
               _hass,
               source.stat_energy_from!,
-              extEntities
+              extEntities,
             );
           returnConfig.power_from_grid_entity = power_from_grid_entity;
           break;
@@ -358,7 +358,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
           generation_entity = await this.getPowerEntityIdForEnergyEntityId(
             _hass,
             source.stat_energy_from,
-            extEntities
+            extEntities,
           );
           if (generation_entity) {
             returnConfig.generation_entity = generation_entity;
@@ -369,7 +369,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
           batteryEntity = await this.getPowerEntityIdForEnergyEntityId(
             _hass,
             source.stat_energy_from,
-            extEntities
+            extEntities,
           );
           if (batteryEntity) {
             returnConfig.battery_entities = [
@@ -401,7 +401,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
       const entityId = await this.getPowerEntityIdForEnergyEntityId(
         _hass,
         consumer.stat_consumption,
-        extEntities
+        extEntities,
       );
       if (entityId) {
         returnConfig.consumer_entities.push({ entity: entityId });
@@ -411,7 +411,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
   }
 
   protected _getValues(
-    config: PowerFlowCardConfig
+    config: PowerFlowCardConfig,
   ):
     | [
         ElecRoute | null,
@@ -435,7 +435,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
           <hui-warning>
             ${createEntityNotFoundWarning(
               this.hass,
-              config.power_from_grid_entity
+              config.power_from_grid_entity,
             )}
           </hui-warning>
         `;
@@ -481,10 +481,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
         text: computeStateName(stateObj),
         rate: computePower(stateObj),
         icon: config.generation_icon || mdiSolarPower,
-        topValue: secondaryValue(
-          this.hass,
-          config.generation_secondary_entity
-        ),
+        topValue: secondaryValue(this.hass, config.generation_secondary_entity),
         outline: config.generation_outline,
       };
     }
@@ -603,7 +600,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
     const gridColor = this._resolveColor(config.grid_color);
     const generationColor = this._resolveColor(config.generation_color);
     const batteryColor = Object.values(batteryRoutes).find(
-      (b) => b.color
+      (b) => b.color,
     )?.color;
     if (gridColor) {
       colorVars["--grid-in-color"] = gridColor;
@@ -644,6 +641,7 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
             .batteryChargeFromGenerationFirst=${batteryChargeFromGenerationFirst}
             .untrackedIcon=${this._config.untracked_icon}
             .unknownSourceIcon=${this._config.unknown_source_icon}
+            .unknownSourceToGrid=${!!this._config.unknown_source_to_grid}
             .netBidirectionalValues=${true}
             .maxRate=${this._config.max_power}
             .showConsumptionTotal=${!!this._config.show_total_consumption}

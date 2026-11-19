@@ -6,7 +6,7 @@ const calcZonedDate = (
   date: Date,
   tz: string,
   fn: (date: Date, options?: any) => Date | number | boolean,
-  options?
+  options?,
 ) => {
   const inputZoned = toZonedTime(date, tz);
   const fnZoned = fn(inputZoned, options);
@@ -21,7 +21,7 @@ export const calcDate = (
   fn: (date: Date, options?: any) => Date,
   locale: FrontendLocaleData,
   config: HassConfig,
-  options?
+  options?,
 ) =>
   locale.time_zone === TimeZone.server
     ? (calcZonedDate(date, config.time_zone, fn, options) as Date)
@@ -32,7 +32,7 @@ export const calcDateProperty = (
   fn: (date: Date, options?: any) => boolean | number,
   locale: FrontendLocaleData,
   config: HassConfig,
-  options?
+  options?,
 ) =>
   locale.time_zone === TimeZone.server
     ? (calcZonedDate(date, config.time_zone, fn, options) as number | boolean)
@@ -43,7 +43,7 @@ export const calcDateDifferenceProperty = (
   startDate: Date,
   fn: (date: Date, options?: any) => boolean | number,
   locale: FrontendLocaleData,
-  config: HassConfig
+  config: HassConfig,
 ) =>
   calcDateProperty(
     endDate,
@@ -52,5 +52,5 @@ export const calcDateDifferenceProperty = (
     config,
     locale.time_zone === TimeZone.server
       ? toZonedTime(startDate, config.time_zone)
-      : startDate
+      : startDate,
   );

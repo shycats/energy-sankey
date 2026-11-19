@@ -143,7 +143,7 @@ export class HaCameraStream extends LitElement {
         this.hass!,
         this.stateObj!.entity_id,
         this.clientWidth,
-        this.clientHeight
+        this.clientHeight,
       );
     } catch (err: any) {
       // poster url is optional
@@ -155,7 +155,7 @@ export class HaCameraStream extends LitElement {
     try {
       const { url } = await fetchStreamUrl(
         this.hass!,
-        this.stateObj!.entity_id
+        this.stateObj!.entity_id,
       );
 
       this._url = url;
