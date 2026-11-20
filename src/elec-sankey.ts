@@ -73,7 +73,7 @@ const ICON_SIZE_PX = 24;
 
 const GEN_ORIGIN_X = 150;
 
-const SVG_LHS_VISIBLE_WIDTH = 110;
+const SVG_LHS_VISIBLE_WIDTH = 200;
 /**
  * Left-hand canvas width (x1 in _calc_xy) for the widest layout a full-width
  * trunk can produce: all generation in a single flow (e.g. all exported),
