@@ -1,6 +1,7 @@
 import {
   CSSResultGroup,
   LitElement,
+  PropertyValues,
   TemplateResult,
   css,
   html,
@@ -16,6 +17,21 @@ import {
 } from "@mdi/js";
 import { customElement, property } from "lit/decorators.js";
 import { batteryLevelIcon } from "./utils/battery-icon";
+import {
+  PULSE_SPACING_PX,
+  PULSE_WAVE_LENGTH_PX,
+  PULSE_SPEED_PX_S,
+  PulseChains,
+  PulseLayer,
+  PulsePaint,
+  PulseSeg,
+  bezierLength,
+  bezierPath,
+  lightenHex,
+  pulseBrightness,
+  renderPulseLayer,
+  reverseBezier,
+} from "./flow-pulses";
 
 /**
  * Notes on graphical layout:
@@ -251,12 +267,56 @@ function renderFlowByCorners(
   classname: string = "",
   color: string | null = null,
 ): TemplateResult {
+  const geometry = flowByCornersGeometry(
+    startLX,
+    startLY,
+    startRX,
+    startRY,
+    endLX,
+    endLY,
+    endRX,
+    endRY,
+  );
+  if (!geometry) {
+    return svg``;
+  }
+  const fillspec = color ? "fill:" + color : "";
+  return svg`
+  <path
+      class="flow ${classname}"
+      d="${geometry.outline}"
+      style="${fillspec}"
+  />
+`;
+}
+
+/**
+ * The shape drawn by renderFlowByCorners: its outline (path data) and its
+ * centreline, a cubic bezier [x0, y0, cx1, cy1, cx2, cy2, x3, y3] from the
+ * middle of the start edge to the middle of the end edge. Null if no shape
+ * is drawn.
+ */
+interface FlowGeometry {
+  outline: string;
+  centre: number[];
+}
+
+function flowByCornersGeometry(
+  startLX: number,
+  startLY: number,
+  startRX: number,
+  startRY: number,
+  endLX: number,
+  endLY: number,
+  endRX: number,
+  endRY: number,
+): FlowGeometry | null {
   // Don't attempt to draw curves for very narrow lines
   if (
     Math.sqrt((startLX - startLY) ** 2 + (startRX - startRY) ** 2) < 1 ||
     Math.sqrt((endLX - endLY) ** 2 + (endRX - endRY) ** 2) < 1
   ) {
-    return svg``;
+    return null;
   }
 
   // Find points to make a line along the the half way fold
@@ -312,24 +372,28 @@ function renderFlowByCorners(
   if (ret1 == null || ret2 == null || ret3 == null || ret4 == null) {
     // eslint-disable-next-line no-console
     console.warn("Warning: render flow failed.");
-    return svg``;
+    return null;
   }
   const [bezierStartLX, bezierStartLY, ,] = ret1;
   const [bezierEndLX, bezierEndLY, ,] = ret2;
   const [bezierEndRX, bezierEndRY, ,] = ret3;
   const [bezierStartRX, bezierStartRY, ,] = ret4;
-  const fillspec = color ? "fill:" + color : "";
-  const svg_ret = svg`
-  <path
-      class="flow ${classname}"
-      d="M ${startLX},${startLY}
+  return {
+    outline: `M ${startLX},${startLY}
       C ${bezierStartLX},${bezierStartLY} ${bezierEndLX},${bezierEndLY} ${endLX},${endLY}
       L ${endRX},${endRY}
-      C ${bezierEndRX},${bezierEndRY} ${bezierStartRX},${bezierStartRY} ${startRX},${startRY} Z"
-      style="${fillspec}"
-  />
-`;
-  return svg_ret;
+      C ${bezierEndRX},${bezierEndRY} ${bezierStartRX},${bezierStartRY} ${startRX},${startRY} Z`,
+    centre: [
+      (startLX + startRX) / 2,
+      (startLY + startRY) / 2,
+      (bezierStartLX + bezierStartRX) / 2,
+      (bezierStartLY + bezierStartRY) / 2,
+      (bezierEndLX + bezierEndRX) / 2,
+      (bezierEndLY + bezierEndRY) / 2,
+      (endLX + endRX) / 2,
+      (endLY + endRY) / 2,
+    ],
+  };
 }
 
 export function renderRect(
@@ -581,6 +645,63 @@ export class ElecSankey extends LitElement {
   /** Show the total consumption above the converging (blended) trunk. */
   @property({ attribute: false })
   public showConsumptionTotal: boolean = false;
+
+  /**
+   * Animate the flows: pulses of a lighter colour travel along each flow in
+   * the direction of the power. Not shown if the user prefers reduced
+   * motion. See flow-pulses.ts.
+   */
+  @property({ attribute: false })
+  public animateFlows: boolean = false;
+
+  /** Multiplier for the speed of the flow animation (1 = default). */
+  @property({ attribute: false })
+  public animationSpeed: number = 1;
+
+  /**
+   * Distance between pulses (px). Wider spacing means fewer pulses; their
+   * speed and length are unchanged. With animationRateScaled, this is the
+   * spacing on a flow at the reference rate.
+   */
+  @property({ attribute: false })
+  public animationSpacing: number = PULSE_SPACING_PX;
+
+  /**
+   * Length of each pulse (px). Pulses are always kept a little shorter than
+   * the gap between them, so they never merge into a solid band.
+   */
+  @property({ attribute: false })
+  public animationWaveLength: number = PULSE_WAVE_LENGTH_PX;
+
+  /**
+   * How bright the pulses are (1 = default, 0.1 to 3). Scales their
+   * opacity, and above about 1.6 lightens their colour further.
+   */
+  @property({ attribute: false })
+  public animationBrightness: number = 1;
+
+  /**
+   * Make each flow's pulses move faster the more it carries (relative to
+   * maxRate, or to the largest flow without it). Otherwise all pulses move
+   * at the same speed.
+   */
+  @property({ attribute: false })
+  public animationRateScaled: boolean = false;
+
+  /** Pulse segments registered while rendering (see _pulseLine). */
+  private _pulses: PulseSeg[] = [];
+
+  /** Canvas-to-screen scale of the diagram's height (= svgScaleX). */
+  private _pulseScaleY: number = 1;
+
+  /** Measured widths (px) of the stretchable SVGs, by pulse layer. */
+  private _pulseWidthsPx: Record<"mid" | "right" | "far", number> = {
+    mid: 60,
+    right: 150,
+    far: ARROW_HEAD_LENGTH,
+  };
+
+  private _pulseResizeObserver?: ResizeObserver;
 
   /** Total of all consumers incl. untracked; set by _recalculate(). */
   protected _consumerTotalRate: number = 0;
@@ -1194,7 +1315,14 @@ export class ElecSankey extends LitElement {
    * by the browser via a hidden probe element.
    */
   private _cssVarAsHex(name: string, fallback: string): string {
-    const value = getComputedStyle(this).getPropertyValue(name).trim();
+    return this._colorAsHex(
+      getComputedStyle(this).getPropertyValue(name).trim(),
+      fallback,
+    );
+  }
+
+  /** Resolves any CSS colour (e.g. "red", "var(--x)") to #rrggbb. */
+  private _colorAsHex(value: string | undefined, fallback: string): string {
     if (!value) {
       return fallback;
     }
@@ -1221,6 +1349,412 @@ export class ElecSankey extends LitElement {
         : fallback;
     this._hexCache.set(value, hex);
     return hex;
+  }
+
+  /* ---- Flow animation (see flow-pulses.ts) ---- */
+
+  private _animating(): boolean {
+    if (!this.animateFlows) {
+      return false;
+    }
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    return !reduce;
+  }
+
+  /** Screen px per user unit (x, y) in each of the diagram's SVGs. */
+  private _pulseScale(layer: PulseLayer): [number, number] {
+    const sy = this._pulseScaleY;
+    if (layer === "lhs") {
+      return [sy, sy];
+    }
+    // The middle and fan-out SVGs are 100 units wide, stretched to fit;
+    // the arrowheads' SVG is as wide as the arrows (and extras).
+    const units =
+      layer === "far" ? ARROW_HEAD_LENGTH + this._getExtrasLength() : 100;
+    return [this._pulseWidthsPx[layer] / units, sy];
+  }
+
+  /** Rate at which pulses move at full (unscaled) speed. */
+  private _pulseRefRate(): number {
+    if (this.maxRate && this.maxRate > 0) {
+      return this.maxRate;
+    }
+    return Math.max(
+      this._generationTotal(),
+      this._gridImport(),
+      this._gridExport,
+      this._consumerTotalRate,
+      this._batteryInTotal(),
+      this._batteryOutTotal(),
+    );
+  }
+
+  /**
+   * Pulses along a stretch of `lenPx` px carrying `rate`. Every pulse takes
+   * the same time to travel one spacing, so with rate scaling a faster flow
+   * has its pulses further apart.
+   */
+  private _pulseCycles(lenPx: number, rate: number): number {
+    let factor = 1;
+    if (this.animationRateScaled) {
+      const ref = this._pulseRefRate();
+      factor = ref > 0 ? Math.sqrt(rate / ref) : 1;
+      factor = Math.min(2, Math.max(0.25, factor));
+    }
+    return lenPx / (this._pulseSpacingPx() * factor);
+  }
+
+  /** Duration of one pulse cycle, in ms. */
+  private _pulseCycleMs(): number {
+    const speed =
+      this.animationSpeed > 0 ? Math.min(20, this.animationSpeed) : 1;
+    return (this._pulseSpacingPx() / (PULSE_SPEED_PX_S * speed)) * 1000;
+  }
+
+  /** animationWaveLength, kept to a sensible range. */
+  private _pulseWaveLengthPx(): number {
+    return this.animationWaveLength > 0
+      ? Math.min(1000, Math.max(2, this.animationWaveLength))
+      : PULSE_WAVE_LENGTH_PX;
+  }
+
+  /** animationSpacing, kept to a sensible range. */
+  private _pulseSpacingPx(): number {
+    return this.animationSpacing > 0
+      ? Math.min(1000, Math.max(10, this.animationSpacing))
+      : PULSE_SPACING_PX;
+  }
+
+  /** Pulse colour for a flow drawn in `color` (any CSS colour). */
+  private _pulseColor(color: string): string {
+    return lightenHex(
+      this._colorAsHex(color, GEN_COLOR),
+      pulseBrightness(this.animationBrightness).lighten,
+    );
+  }
+
+  /** Pulse colours fading from one flow colour to another. */
+  private _pulseBlend(
+    from: string,
+    to: string,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+  ): PulsePaint {
+    return {
+      from: this._pulseColor(from),
+      to: this._pulseColor(to),
+      x1,
+      y1,
+      x2,
+      y2,
+    };
+  }
+
+  /**
+   * Registers a straight stretch of flow from (x0,y0) to (x1,y1) (its
+   * centreline, in the direction of flow), `width` wide.
+   */
+  protected _pulseLine(
+    chain: string,
+    order: number,
+    layer: PulseLayer,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    width: number,
+    rate: number,
+    paint: PulsePaint,
+    clip?: string,
+  ): void {
+    if (!this._animating() || !(width > 0) || !(rate > 0)) {
+      return;
+    }
+    const lenUser = Math.hypot(x1 - x0, y1 - y0);
+    if (!(lenUser > 0)) {
+      return;
+    }
+    const [sx, sy] = this._pulseScale(layer);
+    const lenPx = Math.hypot((x1 - x0) * sx, (y1 - y0) * sy);
+    this._pulses.push({
+      chain,
+      order,
+      layer,
+      d: `M ${x0},${y0} L ${x1},${y1}`,
+      width,
+      clip,
+      lenUser,
+      lenPx,
+      paint,
+      cycles: this._pulseCycles(lenPx, rate),
+      phase0: 0,
+    });
+  }
+
+  /**
+   * Registers an arrowhead at the end of a flow: a triangle from its base
+   * (x0,y0 is the middle of it, `width` wide) to its tip (x1,y1). Pulses
+   * run on into it, clipped to the triangle. `clip` overrides the triangle
+   * (e.g. to include extras drawn before the arrow).
+   */
+  protected _pulseArrow(
+    chain: string,
+    order: number,
+    layer: PulseLayer,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    width: number,
+    rate: number,
+    paint: PulsePaint,
+    clip?: string,
+  ): void {
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    if (!(len > 0)) {
+      return;
+    }
+    // Half the base, perpendicular to the arrow.
+    const px = (-(y1 - y0) / len) * (width / 2);
+    const py = ((x1 - x0) / len) * (width / 2);
+    this._pulseLine(
+      chain,
+      order,
+      layer,
+      x0,
+      y0,
+      x1,
+      y1,
+      width,
+      rate,
+      paint,
+      clip ?? `M ${x0 + px},${y0 + py} L ${x1},${y1} L ${x0 - px},${y0 - py} Z`,
+    );
+  }
+
+  /**
+   * Registers a curved stretch of flow, given the same corners as
+   * renderFlowByCorners. `reverse` if the power flows from the end corners
+   * to the start corners.
+   */
+  protected _pulseCurve(
+    chain: string,
+    order: number,
+    layer: PulseLayer,
+    corners: number[],
+    rate: number,
+    paint: PulsePaint,
+    reverse: boolean = false,
+  ): void {
+    if (!this._animating() || !(rate > 0)) {
+      return;
+    }
+    const [sLX, sLY, sRX, sRY, eLX, eLY, eRX, eRY] = corners;
+    const geometry = flowByCornersGeometry(
+      sLX,
+      sLY,
+      sRX,
+      sRY,
+      eLX,
+      eLY,
+      eRX,
+      eRY,
+    );
+    if (!geometry) {
+      return;
+    }
+    const width = Math.max(
+      Math.hypot(sLX - sRX, sLY - sRY),
+      Math.hypot(eLX - eRX, eLY - eRY),
+    );
+    const centre = reverse ? reverseBezier(geometry.centre) : geometry.centre;
+    const [sx, sy] = this._pulseScale(layer);
+    const lenPx = bezierLength(centre, sx, sy);
+    this._pulses.push({
+      chain,
+      order,
+      layer,
+      d: bezierPath(centre),
+      // The shape isn't constant width around a bend, so stroke wider than
+      // the flow and clip to its outline.
+      width: width * 2,
+      clip: geometry.outline,
+      lenUser: bezierLength(centre),
+      lenPx,
+      paint,
+      cycles: this._pulseCycles(lenPx, rate),
+      phase0: 0,
+    });
+  }
+
+  /**
+   * Gives the registered pulse segments their phases, so pulses line up
+   * wherever flows meet, and renders them for each SVG.
+   *
+   * Junctions (all phases in cycles):
+   * - cons: start of the consumer fan-out (end of the middle SVG), phase 0.
+   * - gen: bottom of the generation fan-in, where it splits to grid,
+   *   batteries and consumers.
+   * - grid: end of the grid import arrow, where it splits to consumers and
+   *   batteries.
+   * - bo: top of the batteries' discharging bar.
+   * - gx: start of the grid export blend, where generation and battery
+   *   export join.
+   * - bt / bin: top / bottom of the batteries' charging blend.
+   */
+  private _resolvePulses(): Record<PulseLayer, TemplateResult | symbol> {
+    const chains = new PulseChains(this._pulses);
+    const back = (chain: string, end: number, fallback: number) =>
+      chains.has(chain) ? chains.backward(chain, end) : fallback;
+
+    const jGen = back("genCons", 0, 0);
+    for (const chain of chains.matching("fanin:")) {
+      chains.backward(chain, jGen);
+    }
+    const jGrid = back("gridCons", 0, 0);
+    chains.backward("gridIn", jGrid);
+    const jBo = back("battCons", 0, 0);
+    for (const chain of chains.matching("discharge:")) {
+      chains.backward(chain, jBo);
+    }
+
+    let jGx = 0;
+    if (chains.has("genGrid")) {
+      jGx = chains.forward("genGrid", jGen);
+      chains.fit("battGrid", jBo, jGx);
+    } else if (chains.has("battGrid")) {
+      jGx = chains.forward("battGrid", jBo);
+    }
+    chains.forward("gridOutGen", jGx);
+    chains.forward("gridOutBatt", jGx);
+
+    let jBt = 0;
+    if (chains.has("genBatt")) {
+      jBt = chains.forward("genBatt", jGen);
+      chains.fit("gridBatt", jGrid, jBt);
+    } else if (chains.has("gridBatt")) {
+      jBt = chains.forward("gridBatt", jGrid);
+    }
+    // Both charging blends are the same length and rate, so end in step.
+    let jBin = jBt;
+    for (const chain of ["chargeGen", "chargeGrid"]) {
+      if (chains.has(chain)) {
+        jBin = chains.forward(chain, jBt);
+      }
+    }
+    for (const chain of chains.matching("charge:")) {
+      chains.forward(chain, jBin);
+    }
+    for (const chain of chains.matching("cons:")) {
+      chains.forward(chain, 0);
+    }
+    chains.finish();
+
+    const layer = (name: PulseLayer) =>
+      renderPulseLayer(
+        this._pulses.filter((s) => s.layer === name),
+        `pulse-${name}`,
+        this._pulseWaveLengthPx(),
+        pulseBrightness(this.animationBrightness).opacities,
+      );
+    return {
+      lhs: layer("lhs"),
+      mid: layer("mid"),
+      right: layer("right"),
+      far: layer("far"),
+    };
+  }
+
+  protected updated(changedProps: PropertyValues): void {
+    super.updated(changedProps);
+    if (!this._animating()) {
+      this._pulseResizeObserver?.disconnect();
+      this._pulseResizeObserver = undefined;
+      return;
+    }
+    if (!this._pulseResizeObserver && typeof ResizeObserver !== "undefined") {
+      // The middle and fan-out SVGs stretch, which changes how long their
+      // flows are on screen (and so how many pulses they need).
+      this._pulseResizeObserver = new ResizeObserver(() =>
+        this._measurePulseWidths(),
+      );
+      this.renderRoot
+        .querySelectorAll(".sankey-mid, .sankey-right, .sankey-far-right")
+        .forEach((el) => this._pulseResizeObserver!.observe(el));
+    }
+    this._measurePulseWidths();
+    this._syncPulseAnimations();
+  }
+
+  public disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._pulseResizeObserver?.disconnect();
+    this._pulseResizeObserver = undefined;
+  }
+
+  private _measurePulseWidths(): void {
+    const width = (sel: string) =>
+      (
+        this.renderRoot.querySelector(sel) as HTMLElement | null
+      )?.getBoundingClientRect().width || 0;
+    const measured = {
+      mid: width(".sankey-mid"),
+      right: width(".sankey-right"),
+      far: width(".sankey-far-right"),
+    };
+    let changed = false;
+    for (const key of ["mid", "right", "far"] as const) {
+      const px = measured[key];
+      if (px > 0 && Math.abs(px - this._pulseWidthsPx[key]) > 0.5) {
+        this._pulseWidthsPx = { ...this._pulseWidthsPx, [key]: px };
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.requestUpdate();
+    }
+  }
+
+  /**
+   * Starts (or updates) the animation of each pulse dash: its dash offset
+   * runs down by one period per cycle. All animations are pinned to the
+   * start of the document timeline, so every pulse is in step with every
+   * other, including ones on elements created by later renders.
+   */
+  private _syncPulseAnimations(): void {
+    const duration = this._pulseCycleMs();
+    this.renderRoot
+      .querySelectorAll<SVGPathElement>("path.pulse")
+      .forEach((el) => {
+        const from = Number(el.dataset.from);
+        const period = Number(el.dataset.period);
+        const key = `${from} ${period} ${duration}`;
+        const state = el as SVGPathElement & {
+          _pulseKey?: string;
+          _pulseAnim?: Animation;
+        };
+        if (state._pulseKey === key && state._pulseAnim) {
+          return;
+        }
+        state._pulseAnim?.cancel();
+        if (typeof el.animate !== "function") {
+          return;
+        }
+        const anim = el.animate(
+          [
+            { strokeDashoffset: `${from}px` },
+            { strokeDashoffset: `${from - period}px` },
+          ],
+          { duration, iterations: Infinity },
+        );
+        anim.startTime = 0;
+        state._pulseAnim = anim;
+        state._pulseKey = key;
+      });
   }
 
   protected _generateLabelDiv(
@@ -1390,6 +1924,32 @@ export class ElecSankey extends LitElement {
               isUnknown ? "url(#unknown-source-grad)" : null,
             ),
           );
+          this._pulseCurve(
+            `fanin:${key}`,
+            0,
+            "lhs",
+            [
+              xA + width,
+              startTerminatorY,
+              xA,
+              startTerminatorY,
+              xB + width,
+              startTerminatorY + TERMINATOR_BLOCK_LENGTH,
+              xB,
+              startTerminatorY + TERMINATOR_BLOCK_LENGTH,
+            ],
+            rate,
+            isUnknown
+              ? this._pulseBlend(
+                  this._cssVarAsHex("--unknown-source-color", "#8c8c8c"),
+                  this._genColor(),
+                  0,
+                  startTerminatorY + ARROW_HEAD_LENGTH,
+                  0,
+                  startTerminatorY + TERMINATOR_BLOCK_LENGTH,
+                )
+              : this._pulseColor(this._genColor()),
+          );
           svgArray.push(
             svg`
             <polygon points="${xA + width},${startTerminatorY}
@@ -1449,6 +2009,16 @@ export class ElecSankey extends LitElement {
             "generation",
           )
         : svg``;
+    if (genToConsWidth > 0) {
+      this._pulseCurve(
+        "genCons",
+        0,
+        "lhs",
+        [x16, y0, x15, y0, x1, y1, x1, y2],
+        this._generationToConsumersRate,
+        this._pulseColor(this._genColor()),
+      );
+    }
     const svgRet = svg`
     ${svgArray}
     ${generatedFlowPath2}
@@ -1481,6 +2051,14 @@ export class ElecSankey extends LitElement {
       y10,
       "generation",
     );
+    this._pulseCurve(
+      "genGrid",
+      0,
+      "lhs",
+      [x0 + width, y0, x0, y0, x11, y10 + width, x11, y10],
+      this._generationToGridRate,
+      this._pulseColor(this._genColor()),
+    );
 
     return svg`
     ${generatedFlowPath}
@@ -1509,6 +2087,48 @@ export class ElecSankey extends LitElement {
     // extended through the padding to reach it.
     const xArrow = x10 - this._lhsPad;
     const fill = color ? `fill:${color};fill-opacity:1` : ``;
+    // Generation's and the batteries' export, side by side, as in the
+    // blends before it. Both at the total export rate so they stay in step.
+    const y11 = y2 - this._batteriesToGridFlowWidth();
+    const exportRate = this._generationToGridRate + this._batteriesToGridRate;
+    const pulsePaint = this._pulseColor(color || this._genColor());
+    this._pulseLine(
+      "gridOutGen",
+      1,
+      "lhs",
+      x10,
+      (y10 + y11) / 2,
+      xArrow,
+      (y10 + y11) / 2,
+      y11 - y10,
+      exportRate,
+      pulsePaint,
+    );
+    this._pulseLine(
+      "gridOutBatt",
+      1,
+      "lhs",
+      x10,
+      (y11 + y2) / 2,
+      xArrow,
+      (y11 + y2) / 2,
+      y2 - y11,
+      exportRate,
+      pulsePaint,
+    );
+    // The arrowhead takes both lanes; they are in step at its base.
+    this._pulseArrow(
+      this._generationToGridFlowWidth() > 0 ? "gridOutGen" : "gridOutBatt",
+      2,
+      "lhs",
+      xArrow,
+      (y10 + y2) / 2,
+      xArrow - arrow_head_length,
+      (y10 + y2) / 2,
+      y2 - y10,
+      exportRate,
+      pulsePaint,
+    );
     // The rect also overlaps the blends it joins, to avoid a seam.
     return svg`
     <rect
@@ -1537,6 +2157,18 @@ export class ElecSankey extends LitElement {
     if (this._generationToBatteryFlowWidth() === 0) {
       return nothing;
     }
+    this._pulseLine(
+      "genBatt",
+      0,
+      "lhs",
+      (x14 + x15) / 2,
+      y0,
+      (x14 + x15) / 2,
+      y17,
+      x15 - x14,
+      this._generationToBatteriesRate,
+      this._pulseColor(this._genColor()),
+    );
 
     // Overlaps the generation fan-in above and the blend below.
     return svg`
@@ -1599,6 +2231,18 @@ export class ElecSankey extends LitElement {
       )}
     </div>`;
 
+    this._pulseLine(
+      "gridIn",
+      0,
+      "lhs",
+      -this._lhsPad,
+      y2 + in_width / 2,
+      arrow_head_length,
+      y2 + in_width / 2,
+      in_width,
+      rateA,
+      this._pulseColor(this._gridColor()),
+    );
     const svgRet = svg`
     <rect
       class="grid"
@@ -1625,6 +2269,18 @@ export class ElecSankey extends LitElement {
     if (this._gridToConsumersFlowWidth() === 0) {
       return nothing;
     }
+    this._pulseLine(
+      "gridCons",
+      0,
+      "lhs",
+      x10,
+      (y2 + y5) / 2,
+      x1,
+      (y2 + y5) / 2,
+      y5 - y2,
+      this._gridToConsumersRate,
+      this._pulseColor(this._gridColor()),
+    );
     return svg`
     <rect
       class="grid"
@@ -1647,6 +2303,14 @@ export class ElecSankey extends LitElement {
     if (this._gridToBatteriesFlowWidth() === 0) {
       return nothing;
     }
+    this._pulseCurve(
+      "gridBatt",
+      0,
+      "lhs",
+      [x10, y5, x10, y13, x14, y17, x17, y17],
+      this._gridToBatteriesRate,
+      this._pulseColor(this._gridColor()),
+    );
     return renderFlowByCorners(x10, y5, x10, y13, x14, y17, x17, y17, "grid");
   }
 
@@ -1661,6 +2325,14 @@ export class ElecSankey extends LitElement {
     if (this._batteryToConsumersFlowWidth() === 0) {
       return nothing;
     }
+    this._pulseCurve(
+      "battCons",
+      0,
+      "lhs",
+      [x20, y17, x21, y17, x1, y5, x1, y4],
+      this._batteriesToConsumersRate,
+      this._pulseColor(this._battColor()),
+    );
     return renderFlowByCorners(x20, y17, x21, y17, x1, y5, x1, y4, "battery");
   }
 
@@ -1675,6 +2347,14 @@ export class ElecSankey extends LitElement {
     if (this._batteriesToGridFlowWidth() === 0) {
       return nothing;
     }
+    this._pulseCurve(
+      "battGrid",
+      0,
+      "lhs",
+      [x15, y17, x20, y17, x11, y2, x11, y11],
+      this._batteriesToGridRate,
+      this._pulseColor(this._battColor()),
+    );
     return renderFlowByCorners(
       x15,
       y17,
@@ -1698,6 +2378,18 @@ export class ElecSankey extends LitElement {
     if (!this._generationToGridFlowWidth()) {
       return nothing;
     }
+    this._pulseLine(
+      "gridOutGen",
+      0,
+      "lhs",
+      x11,
+      (y10 + y11) / 2,
+      x10,
+      (y10 + y11) / 2,
+      y11 - y10,
+      this._generationToGridRate + this._batteriesToGridRate,
+      this._pulseBlend(this._genColor(), endColor, x11, 0, x10, 0),
+    );
     return renderBlendRect(
       x11 + this._overlap,
       y11,
@@ -1723,6 +2415,18 @@ export class ElecSankey extends LitElement {
     if (!this._batteriesToGridFlowWidth()) {
       return nothing;
     }
+    this._pulseLine(
+      "gridOutBatt",
+      0,
+      "lhs",
+      x11,
+      (y11 + y2) / 2,
+      x10,
+      (y11 + y2) / 2,
+      y2 - y11,
+      this._generationToGridRate + this._batteriesToGridRate,
+      this._pulseBlend(this._battColor(), endColor, x11, 0, x10, 0),
+    );
     return renderBlendRect(
       x11 + this._overlap,
       y2,
@@ -1745,6 +2449,14 @@ export class ElecSankey extends LitElement {
     if (!this._generationToConsumersFlowWidth()) {
       return nothing;
     }
+    this._pulseMidLane(
+      "genCons",
+      y1,
+      y2,
+      this._generationToConsumersRate,
+      this._genColor(),
+      endColor,
+    );
     return renderBlendRect(
       0,
       y1,
@@ -1765,6 +2477,14 @@ export class ElecSankey extends LitElement {
     y5: number,
     endColor: string,
   ): TemplateResult | symbol {
+    this._pulseMidLane(
+      "gridCons",
+      y2,
+      y5,
+      this._gridToConsumersRate,
+      this._gridColor(),
+      endColor,
+    );
     return renderBlendRect(
       0,
       y2,
@@ -1788,6 +2508,14 @@ export class ElecSankey extends LitElement {
     if (this._batteryToConsumersFlowWidth() === 0) {
       return nothing;
     }
+    this._pulseMidLane(
+      "battCons",
+      y5,
+      y4,
+      this._batteriesToConsumersRate,
+      this._battColor(),
+      endColor,
+    );
 
     return renderBlendRect(
       0,
@@ -1801,6 +2529,33 @@ export class ElecSankey extends LitElement {
       this._battColor(),
       endColor,
       "batt-in-blend-rect",
+    );
+  }
+
+  /**
+   * Registers one source's lane across the middle SVG (the blend into the
+   * consumers' colour, then the stretch before the fan-out) as the end of
+   * that source's chain to the consumers.
+   */
+  private _pulseMidLane(
+    chain: string,
+    yTop: number,
+    yBottom: number,
+    rate: number,
+    color: string,
+    endColor: string,
+  ): void {
+    this._pulseLine(
+      chain,
+      1,
+      "mid",
+      0,
+      (yTop + yBottom) / 2,
+      100,
+      (yTop + yBottom) / 2,
+      yBottom - yTop,
+      rate,
+      this._pulseBlend(color, endColor, 0, 0, CONSUMER_BLEND_LENGTH, 0),
     );
   }
 
@@ -1896,6 +2651,23 @@ export class ElecSankey extends LitElement {
       "consumer",
       color,
     );
+    this._pulseCurve(
+      `cons:${count}`,
+      0,
+      "right",
+      [
+        topLeftX,
+        topLeftY,
+        topLeftX,
+        topLeftY + width,
+        topRightX + PAD_ANTIALIAS,
+        topRightY,
+        topRightX + PAD_ANTIALIAS,
+        topRightY + width,
+      ],
+      consumer.rate,
+      this._pulseColor(color),
+    );
     const extrasLength = this._getExtrasLength();
     const svgExtras = this._insertExtras(
       topRightX,
@@ -1930,6 +2702,22 @@ export class ElecSankey extends LitElement {
       )}
     </div>`;
 
+    // On through any extras and into the arrowhead.
+    this._pulseArrow(
+      `cons:${count}`,
+      1,
+      "far",
+      0,
+      yEnd,
+      extrasLength + ARROW_HEAD_LENGTH,
+      yEnd,
+      width,
+      consumer.rate,
+      this._pulseColor(color),
+      `M 0,${yEnd - width / 2} L ${extrasLength},${yEnd - width / 2}
+        L ${extrasLength + ARROW_HEAD_LENGTH},${yEnd}
+        L ${extrasLength},${yEnd + width / 2} L 0,${yEnd + width / 2} Z`,
+    );
     const svgArrow = svg`
       <polygon points="${extrasLength},${yEnd - width / 2}
         ${extrasLength},${yEnd + width / 2}
@@ -2113,6 +2901,34 @@ export class ElecSankey extends LitElement {
 
     const ratio = x14 - x17 < 1 ? 0 : (x14 - x17) / (x15 - x17);
     const battOutBlendColor = mixHexes(gridColor, genColor, ratio);
+    // The charging blends, side by side; both at the total charging rate so
+    // they stay in step into the merged bar below.
+    const chargeRate =
+      this._gridToBatteriesRate + this._generationToBatteriesRate;
+    this._pulseLine(
+      "chargeGrid",
+      0,
+      "lhs",
+      (x17 + x14) / 2,
+      y17,
+      (x17 + x14) / 2,
+      y18,
+      x14 - x17,
+      chargeRate,
+      this._pulseBlend(gridColor, battOutBlendColor, 0, y17, 0, y18),
+    );
+    this._pulseLine(
+      "chargeGen",
+      0,
+      "lhs",
+      (x14 + x15) / 2,
+      y17,
+      (x14 + x15) / 2,
+      y18,
+      x15 - x14,
+      chargeRate,
+      this._pulseBlend(genColor, battOutBlendColor, 0, y17, 0, y18),
+    );
     if (this._gridToBatteriesFlowWidth() !== 0) {
       svgRetArray.push(
         renderBlendRect(
@@ -2218,6 +3034,67 @@ export class ElecSankey extends LitElement {
           ? this._rateToWidth(batt.in.rate)
           : 0;
       curvePadTemp = x1 - x21;
+      // Discharging: from the battery (on the right) into the bar, then up
+      // it. Charging: down the bar, then out to the battery.
+      this._pulseCurve(
+        `discharge:${idx}`,
+        0,
+        "lhs",
+        [
+          xA,
+          yA,
+          xA - widthIn,
+          yA,
+          x1,
+          yA + curvePadTemp,
+          x1,
+          yA + curvePadTemp + widthIn,
+        ],
+        batt.in.rate,
+        this._pulseColor(batt.color || this._battColor()),
+        true,
+      );
+      this._pulseLine(
+        `discharge:${idx}`,
+        1,
+        "lhs",
+        xA - widthIn / 2,
+        yA,
+        xA - widthIn / 2,
+        y17,
+        widthIn,
+        batt.in.rate,
+        this._pulseColor(this._battColor()),
+      );
+      this._pulseLine(
+        `charge:${idx}`,
+        0,
+        "lhs",
+        xB - widthOut / 2,
+        y18,
+        xB - widthOut / 2,
+        yA,
+        widthOut,
+        batt.out.rate,
+        this._pulseColor(battOutBlendColor),
+      );
+      this._pulseCurve(
+        `charge:${idx}`,
+        1,
+        "lhs",
+        [
+          xB,
+          yA,
+          xB - widthOut,
+          yA,
+          x1 - arrow_head_length,
+          yA + curvePadTemp + widthIn,
+          x1 - arrow_head_length,
+          yA + curvePadTemp + widthIn + widthOut,
+        ],
+        batt.out.rate,
+        this._pulseColor(battOutBlendColor),
+      );
       if (widthIn > 0) {
         svgRetArray.push(
           renderFlowByCorners(
@@ -2276,6 +3153,18 @@ export class ElecSankey extends LitElement {
           ${x1},${yA + curvePadTemp + widthIn + widthOut / 2},
           ${x1 - arrow_head_length},${yA + curvePadTemp + widthIn + widthOut}"
           style="fill:${battOutBlendColor}" />`,
+        );
+        this._pulseArrow(
+          `charge:${idx}`,
+          2,
+          "lhs",
+          x1 - arrow_head_length,
+          yA + curvePadTemp + widthIn + widthOut / 2,
+          x1,
+          yA + curvePadTemp + widthIn + widthOut / 2,
+          widthOut,
+          batt.out.rate,
+          this._pulseColor(battOutBlendColor),
         );
         xB -= widthOut;
       }
@@ -2364,6 +3253,42 @@ export class ElecSankey extends LitElement {
   ] {
     const yEnd = y18 + SINGLE_BATTERY_TERMINATOR_LENGTH;
     const arrow = ARROW_HEAD_LENGTH;
+    this._pulseLine(
+      "charge:0",
+      0,
+      "lhs",
+      (x17 + x15) / 2,
+      y18,
+      (x17 + x15) / 2,
+      yEnd - arrow,
+      x15 - x17,
+      this._batteryOutTotal(),
+      this._pulseColor(battOutBlendColor),
+    );
+    this._pulseArrow(
+      "charge:0",
+      1,
+      "lhs",
+      (x17 + x15) / 2,
+      yEnd - arrow,
+      (x17 + x15) / 2,
+      yEnd,
+      x15 - x17,
+      this._batteryOutTotal(),
+      this._pulseColor(battOutBlendColor),
+    );
+    this._pulseLine(
+      "discharge:0",
+      0,
+      "lhs",
+      (x15 + x21) / 2,
+      yEnd,
+      (x15 + x21) / 2,
+      y17,
+      x21 - x15,
+      this._batteryInTotal(),
+      this._pulseColor(batt.color || this._battColor()),
+    );
     if (x15 - x17 > 0) {
       svgRetArray.push(
         renderRect(
@@ -2665,6 +3590,8 @@ export class ElecSankey extends LitElement {
     this._lhsPad = svgCanvasWidth - x1;
     const svgScaleX = SVG_LHS_VISIBLE_WIDTH / svgCanvasWidth;
     this._overlap = 1 / svgScaleX;
+    this._pulses = [];
+    this._pulseScaleY = svgScaleX;
     const svgVisibleWidth = SVG_LHS_VISIBLE_WIDTH;
     const x10 = ARROW_HEAD_LENGTH / svgScaleX;
     const x11 = x10 + GRID_BLEND_LENGTH;
@@ -2809,6 +3736,7 @@ export class ElecSankey extends LitElement {
       y4,
       toConsumersBlendColor,
     );
+    const pulses = this._resolvePulses();
     let ymax = Math.max(y4, y8, y22, minHeightPx / svgScaleX);
     if (this._snapUnit) {
       ymax = Math.ceil(ymax / this._snapUnit) * this._snapUnit;
@@ -2845,7 +3773,7 @@ export class ElecSankey extends LitElement {
                 ${gridOutArrowSvg} ${genToBattFlowSvg} ${gridToBattFlowSvg}
                 ${battToGridBlendFlowSvg} ${gridInFlowSvg}
                 ${gridToConsumersFlowSvg} ${battToConsFlowSvg}
-                ${battToGridFlowSvg} ${battInOutBlendSvg}
+                ${battToGridFlowSvg} ${battInOutBlendSvg} ${pulses.lhs}
               </svg>
             </div>
             ${batteryBottomDiv}
@@ -2860,6 +3788,7 @@ export class ElecSankey extends LitElement {
                   >
                     ${genInBlendFlowSvg} ${gridInBlendFlowSvg}
                     ${battToConsBlendFlowSvg} ${blendedFlowPreFanOut}
+                    ${pulses.mid}
                   </svg>
                 </div>
                 <div class="sankey-mid-labels">
@@ -2879,7 +3808,7 @@ export class ElecSankey extends LitElement {
                 height=${ymax * svgScaleX}
                 preserveAspectRatio="none"
               >
-                ${consOutFlowsSvg}
+                ${consOutFlowsSvg} ${pulses.right}
               </svg>
             </div>
             <div class="sankey-far-right">
@@ -2890,7 +3819,7 @@ export class ElecSankey extends LitElement {
                 height=${ymax * svgScaleX}
                 preserveAspectRatio="none"
               >
-                ${consOutExtrasSvg} ${consOutArrowsSvg}
+                ${consOutExtrasSvg} ${consOutArrowsSvg} ${pulses.far}
               </svg>
             </div>
           </div>
@@ -3169,6 +4098,11 @@ export class ElecSankey extends LitElement {
         polygon.tint {
           fill: #000000;
           opacity: 0.2;
+        }
+        path.pulse {
+          fill: none;
+          stroke-linecap: butt;
+          pointer-events: none;
         }
         path.generation {
           fill: var(--generation-color, #0d6a04);

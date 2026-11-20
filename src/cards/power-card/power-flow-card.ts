@@ -645,6 +645,12 @@ export class PowerFlowCard extends ElecFlowCardBase implements LovelaceCard {
             .netBidirectionalValues=${true}
             .maxRate=${this._config.max_power}
             .showConsumptionTotal=${!!this._config.show_total_consumption}
+            .animateFlows=${!!this._config.animate_flows}
+            .animationSpeed=${this._config.animation_speed ?? 1}
+            .animationSpacing=${this._config.animation_spacing ?? 80}
+            .animationWaveLength=${this._config.animation_wave_length ?? 48}
+            .animationBrightness=${this._config.animation_brightness ?? 1}
+            .animationRateScaled=${!!this._config.animation_rate_scaled}
           ></ha-elec-sankey>
         </div>
       </ha-card>

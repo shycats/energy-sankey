@@ -62,6 +62,18 @@ export interface PowerFlowCardConfig extends ElecFlowCardConfig {
   grid_outline?: boolean;
   /** Draw a rounded outline around the generation label. */
   generation_outline?: boolean;
+  /** Animate the flows with pulses moving in the direction of the power. */
+  animate_flows?: boolean;
+  /** Speed multiplier for the flow animation (default 1). */
+  animation_speed?: number;
+  /** Distance between the animation's pulses, in px (default 80). */
+  animation_spacing?: number;
+  /** Length of each of the animation's pulses, in px (default 48). */
+  animation_wave_length?: number;
+  /** Brightness multiplier for the animation's pulses (default 1). */
+  animation_brightness?: number;
+  /** Pulses move faster on flows carrying more power. */
+  animation_rate_scaled?: boolean;
   consumer_entities: PowerFlowCardEntityConfig[];
   battery_entities?: PowerFlowCardEntityConfig[];
 }

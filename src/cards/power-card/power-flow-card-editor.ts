@@ -50,6 +50,12 @@ const POWER_LABELS = [
   "unknown_source_to_grid",
   "grid_outline",
   "generation_outline",
+  "animate_flows",
+  "animation_speed",
+  "animation_spacing",
+  "animation_wave_length",
+  "animation_brightness",
+  "animation_rate_scaled",
 ];
 
 // Optional string fields (icons, secondary entities); cleared when emptied.
@@ -71,6 +77,8 @@ const OPTIONAL_FLAG_FIELDS = [
   "generation_outline",
   "show_total_consumption",
   "unknown_source_to_grid",
+  "animate_flows",
+  "animation_rate_scaled",
 ] as const;
 
 @customElement(POWER_CARD_EDITOR_NAME)
@@ -186,6 +194,61 @@ export class PowerFlowCardEditor
             name: "show_total_consumption",
             selector: { boolean: {} },
           },
+          { name: "animate_flows", selector: { boolean: {} } },
+          ...(this._config?.animate_flows
+            ? [
+                {
+                  name: "animation_speed",
+                  selector: {
+                    number: {
+                      min: 0.1,
+                      max: 10,
+                      step: 0.1,
+                      mode: "box",
+                    },
+                  },
+                },
+                {
+                  name: "animation_spacing",
+                  selector: {
+                    number: {
+                      min: 10,
+                      max: 1000,
+                      step: 5,
+                      mode: "box",
+                      unit_of_measurement: "px",
+                    },
+                  },
+                },
+                {
+                  name: "animation_wave_length",
+                  selector: {
+                    number: {
+                      min: 2,
+                      max: 1000,
+                      step: 2,
+                      mode: "box",
+                      unit_of_measurement: "px",
+                    },
+                  },
+                },
+                {
+                  name: "animation_brightness",
+                  selector: {
+                    number: {
+                      min: 0.1,
+                      max: 3,
+                      step: 0.1,
+                      mode: "slider",
+                    },
+                  },
+                },
+                {
+                  name: "animation_rate_scaled",
+                  selector: { boolean: {} },
+                },
+              ]
+            : []),
           {
             name: "invert_battery_flows",
             selector: { boolean: {} },
@@ -390,6 +453,22 @@ export class PowerFlowCardEditor
       } else if (value.max_power != this._config.max_power) {
         configValue = "max_power";
         value = value.max_power ?? "";
+      } else if (value.animation_speed != this._config.animation_speed) {
+        configValue = "animation_speed";
+        value = value.animation_speed ?? "";
+      } else if (value.animation_spacing != this._config.animation_spacing) {
+        configValue = "animation_spacing";
+        value = value.animation_spacing ?? "";
+      } else if (
+        value.animation_wave_length != this._config.animation_wave_length
+      ) {
+        configValue = "animation_wave_length";
+        value = value.animation_wave_length ?? "";
+      } else if (
+        value.animation_brightness != this._config.animation_brightness
+      ) {
+        configValue = "animation_brightness";
+        value = value.animation_brightness ?? "";
       } else if (
         value.hide_zero_consumers != this._config.hide_zero_consumers
       ) {
