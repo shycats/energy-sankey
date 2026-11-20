@@ -778,28 +778,9 @@ export class ElecSankey extends LitElement {
     let gridToBatteriesTemp = 0;
     let generationToBatteriesTemp = 0;
     let gridToConsumersTemp = 0;
-    // Check if we are exporting more than we are generating plus flowing from
-    // batteries.
-    let x = this._gridExport - generationTrackedTotal - batteryInTotal;
-    if (x > 0) {
-      // If this is the case, we create a phantom generation source
-      // of sufficient value to balance the equation, and assume that all
-      // battery power is going to the grid.
-      phantomGeneration = x;
-      batteriesToGridTemp = batteryInTotal;
-    } else {
-      // If we aren't exporting more than generating + discharging, the diagram
-      // is provisionally viable without a phantom generation source.
-      // *For now* we assume the maximum possible split of battery rate that
-      // could go the grid is going to the grid, the rest goes to consumers.
-      if (this._gridExport > batteryInTotal) {
-        batteriesToGridTemp = batteryInTotal;
-      } else {
-        batteriesToGridTemp = this._gridExport;
-      }
-    }
-    // Whatever battery out is not going to the grid must be going to consumers.
-    let batteriesToConsumersTemp = batteryInTotal - batteriesToGridTemp;
+    // Whatever export the batteries can't account for must be coming from
+    // generation (real or phantom).
+    const generationToGridMin = Math.max(0, this._gridExport - batteryInTotal);
 
     // The user can specify that their batteries are only charged from
     // generation.
@@ -810,13 +791,9 @@ export class ElecSankey extends LitElement {
       gridToBatteriesTemp = 0;
       generationToBatteriesTemp = batteriesOutTotal;
     } else if (this.batteryChargeFromGenerationFirst) {
-      // Generation (less whatever of it is being exported) charges the
+      // Generation (less whatever of it must be exported) charges the
       // batteries first; the grid only makes up any shortfall. Anything the
       // grid can't cover either is left to the phantom generation below.
-      const generationToGridMin =
-        this._gridExport > batteryInTotal
-          ? this._gridExport - batteryInTotal
-          : 0;
       const generationAvailable = Math.max(
         0,
         generationTrackedTotal - generationToGridMin,
@@ -836,12 +813,27 @@ export class ElecSankey extends LitElement {
         generationToBatteriesTemp = batteriesOutTotal - gridToBatteriesTemp;
       }
     }
-    // If we have exceeded the total generation by doing this, we must
-    // recalculate the phantom generation source.
-    x =
-      this._gridExport +
-      generationToBatteriesTemp -
-      (generationTrackedTotal + gridToBatteriesTemp + batteryInTotal);
+
+    // Split the export between generation and batteries. Generation exports
+    // first (with whatever is left after charging the batteries); the
+    // batteries only cover the part of the export generation can't. If the
+    // export exceeds generation plus discharge, the excess is attributed to
+    // generation and balanced by a phantom generation source below.
+    const generationSpare = Math.max(
+      0,
+      generationTrackedTotal - generationToGridMin - generationToBatteriesTemp,
+    );
+    generationToGridTemp =
+      generationToGridMin +
+      Math.min(generationSpare, this._gridExport - generationToGridMin);
+    batteriesToGridTemp = this._gridExport - generationToGridTemp;
+    // Whatever battery out is not going to the grid must be going to consumers.
+    const batteriesToConsumersTemp = batteryInTotal - batteriesToGridTemp;
+
+    // If generation can't cover its flows to the grid and batteries, we need
+    // a phantom generation source.
+    let x =
+      generationToGridTemp + generationToBatteriesTemp - generationTrackedTotal;
     if (x > 0) {
       phantomGeneration = x;
     }
@@ -849,15 +841,6 @@ export class ElecSankey extends LitElement {
     // All grid input that is not going to batteries must be going to
     // consumers, so we calculate that next.
     gridToConsumersTemp = gridImport - gridToBatteriesTemp;
-
-    // If we are exporting more than is coming from the batteries, we
-    // must be generating this amount. We don't know whether it is phantom
-    // or real yet.
-    if (this._gridExport > batteryInTotal) {
-      generationToGridTemp = this._gridExport - batteryInTotal;
-    } else {
-      generationToGridTemp = 0;
-    }
 
     // Now that we have generation to grid & generation to batteries, the
     // remaining generation must be going to consumers, so we calculate that.
@@ -915,12 +898,6 @@ export class ElecSankey extends LitElement {
       //   generationTrackedTotal +
       //   phantomGeneration -
       //   (generationToGridTemp + generationToBatteriesTemp);
-    }
-
-    if (this._gridExport > batteryInTotal) {
-      generationToGridTemp = this._gridExport - batteryInTotal;
-    } else {
-      generationToGridTemp = 0;
     }
 
     consumerTotalA =
