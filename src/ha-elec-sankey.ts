@@ -1,7 +1,7 @@
 import { customElement, property } from "lit/decorators.js";
 
 import { CSSResultArray, TemplateResult, css, html, nothing } from "lit";
-import { mdiArrowLeft, mdiArrowRight } from "@mdi/js";
+import { mdiArrowDown, mdiArrowLeft, mdiArrowRight, mdiArrowUp } from "@mdi/js";
 import { ElecSankey, isIconName, LabelTopValue } from "./elec-sankey";
 import { HomeAssistant } from "./ha/types";
 import { formatNumber } from "./ha/common/number/format_number";
@@ -62,6 +62,7 @@ export class HaElecSankey extends ElecSankey {
     showLeftValue: boolean = true,
     topValue: LabelTopValue | undefined = undefined,
     outline: boolean = false,
+    vertical: boolean = false,
   ): TemplateResult {
     const _id = id || "";
     // With a name (consumers), the icon goes to the side of the name and
@@ -83,6 +84,7 @@ export class HaElecSankey extends ElecSankey {
       displayClass,
       showLeftValue,
       numFractionDigits,
+      vertical,
     );
     // Shown above the icon. Its own id lets a click open the more-info
     // dialog of that value's entity (e.g. the battery level sensor).
@@ -96,11 +98,11 @@ export class HaElecSankey extends ElecSankey {
         topText += `\u00a0${topValue.unit}`;
       }
     }
-    const topValueHtml =
+    const topSpan =
       topText !== undefined
         ? html`<span class="top-value" id=${topValue!.id || _id}
-              >${topText}</span
-            ><br />`
+            >${topText}</span
+          >`
         : nothing;
     // prettier-ignore
     return html`<div
@@ -109,7 +111,9 @@ export class HaElecSankey extends ElecSankey {
       @click=${id ? this._handleMoreInfo : nothing}
     >${sideIcon
         ? html`${iconHtml}<div class="label-text" id=${_id}>${body}</div>`
-        : html`${topValueHtml}${iconHtml}${body}`}</div>`;
+        : vertical
+          ? html`${body}<br />${iconHtml}${topText !== undefined ? html`<br />${topSpan}` : nothing}`
+          : html`${topText !== undefined ? html`${topSpan}<br />` : nothing}${iconHtml}${body}`}</div>`;
   }
 
   private _generateLabelBody(
@@ -122,6 +126,7 @@ export class HaElecSankey extends ElecSankey {
     displayClass: string | undefined,
     showLeftValue: boolean,
     numFractionDigits: number,
+    vertical: boolean,
   ): TemplateResult {
     const format = (value: number) =>
       formatNumber(value, this.hass.locale, {
@@ -140,7 +145,13 @@ export class HaElecSankey extends ElecSankey {
       ><ha-svg-icon
           id=${_id}
           class="small"
-          .path=${direction === "left" ? mdiArrowLeft : mdiArrowRight}
+          .path=${direction === "left"
+            ? vertical
+              ? mdiArrowUp
+              : mdiArrowLeft
+            : vertical
+              ? mdiArrowDown
+              : mdiArrowRight}
         ></ha-svg-icon>${format(value)}&nbsp;${this.unit}</span>`;
 
     let values: TemplateResult;
@@ -148,12 +159,12 @@ export class HaElecSankey extends ElecSankey {
       // Like bidirectional values at 0, a value that rounds to zero is shown
       // in the neutral text colour rather than its flow colour.
       const isZero = Number(valueA.toFixed(numFractionDigits)) === 0;
-      values = html`<br /><span
-          class="value ${isZero ? "" : (displayClass ?? "")}"
-          style=${valueAColor && !isZero ? `color:${valueAColor}` : nothing}
-          id=${_id}
-          >${format(valueA)}&nbsp;${this.unit}</span
-        >`;
+      values = html`<span
+        class="value ${isZero ? "" : (displayClass ?? "")}"
+        style=${valueAColor && !isZero ? `color:${valueAColor}` : nothing}
+        id=${_id}
+        >${format(valueA)}&nbsp;${this.unit}</span
+      >`;
     } else if (this.netBidirectionalValues) {
       // Single value: valueA is flow to the right (e.g. grid import,
       // battery charging), valueB to the left (grid export, discharging).
@@ -161,16 +172,18 @@ export class HaElecSankey extends ElecSankey {
       const rounded = Number(net.toFixed(numFractionDigits));
       values =
         rounded > 0
-          ? html`<br />${directionSpan("right", net, valueAColor)}`
+          ? directionSpan("right", net, valueAColor)
           : rounded < 0
-            ? html`<br />${directionSpan("left", -net, valueBColor)}`
-            : html`<br />${format(0)}&nbsp;${this.unit}`;
+            ? directionSpan("left", -net, valueBColor)
+            : html`${format(0)}&nbsp;${this.unit}`;
     } else {
-      values = html`<br />${showLeftValue
+      values = html`${showLeftValue
           ? directionSpan("left", valueB, valueBColor)
           : nothing}<br />${directionSpan("right", valueA, valueAColor)}`;
     }
-    return html`${_name || nothing}${values}`;
+    // Vertical labels (a single battery, below its flows) have the values on
+    // top, so nothing goes above them.
+    return vertical ? values : html`${_name || nothing}<br />${values}`;
   }
 
   protected _formatTotal(rate: number): string {

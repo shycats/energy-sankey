@@ -59,6 +59,12 @@ const CONSUMER_BLEND_LENGTH_PRE_FAN_OUT = 20;
 
 const GRID_BLEND_LENGTH = 30;
 const BATTERY_BLEND_LENGTH = 30;
+/** With a single battery: the run of its bar below the blend. */
+const SINGLE_BATTERY_TERMINATOR_LENGTH = 30;
+/** With a single battery: gap (px) between the bar's end and its label. */
+const SINGLE_BATTERY_LABEL_GAP_PX = 2;
+/** Blank space below the batteries' labels, in canvas units. */
+const BATTERY_LABEL_BOTTOM_MARGIN = 30;
 
 const ARROW_HEAD_LENGTH = 10;
 const TEXT_PADDING = 8;
@@ -1229,27 +1235,39 @@ export class ElecSankey extends LitElement {
     _: boolean = true,
     topValue: LabelTopValue | undefined = undefined,
     outline: boolean = false,
+    vertical: boolean = false,
   ): TemplateResult {
     const valueARounded = Math.round(valueA * 10) / 10;
     const valueBRounded = valueB ? Math.round(valueB * 10) / 10 : undefined;
 
-    return html`<div class="label ${outline ? "outlined" : ""}">
-      ${topValue
-        ? html`${typeof topValue.value === "number"
-              ? Math.round(topValue.value)
-              : topValue.value}${topValue.unit ?? ""}<br />`
-        : nothing}
-      ${icon && !isIconName(icon)
+    const top = topValue
+      ? html`${typeof topValue.value === "number"
+          ? Math.round(topValue.value)
+          : topValue.value}${topValue.unit ?? ""}`
+      : undefined;
+    const iconSvg =
+      icon && !isIconName(icon)
         ? svg`<svg x="0" y="0" height=${ICON_SIZE_PX}>
               <path d=${icon} />
-            </svg>
-            <br />`
-        : nothing}${valueBRounded
-        ? html`
-            OUT ${valueBRounded} ${this.unit}<br />
-            IN ${valueARounded} ${this.unit}
-          `
-        : html`${_name}<br />${valueARounded} ${this.unit} `}
+            </svg>`
+        : undefined;
+    const values = valueBRounded
+      ? html`
+          OUT ${valueBRounded} ${this.unit}<br />
+          IN ${valueARounded} ${this.unit}
+        `
+      : html`${_name}<br />${valueARounded} ${this.unit} `;
+
+    // Vertical labels (a single battery, below its flows) are upside down:
+    // values first, then the icon, then the top value.
+    return html`<div class="label ${outline ? "outlined" : ""}">
+      ${vertical
+        ? html`${values}${iconSvg ? html`<br />${iconSvg}` : nothing}${top
+            ? html`<br />${top}`
+            : nothing}`
+        : html`${top ? html`${top}<br />` : nothing}${iconSvg
+            ? html`${iconSvg}<br />`
+            : nothing}${values}`}
     </div> `;
   }
 
@@ -2073,7 +2091,12 @@ export class ElecSankey extends LitElement {
     y17: number,
     y18: number,
     svgScaleX,
-  ): [Array<TemplateResult | symbol>, TemplateResult | symbol, number] {
+  ): [
+    Array<TemplateResult | symbol>,
+    TemplateResult | symbol,
+    number,
+    TemplateResult | symbol,
+  ] {
     // Bottom layer
     const svgRetArray: Array<TemplateResult | symbol> = [];
     // Top layer
@@ -2121,6 +2144,22 @@ export class ElecSankey extends LitElement {
         ),
       );
     }
+    const batteryRoutes: { [id: string]: ElecRoutePair } = this.batteryRoutes;
+    const battKeys = Object.keys(batteryRoutes);
+    if (battKeys.length === 1) {
+      return this._renderSingleBattery(
+        batteryRoutes[battKeys[0]],
+        x17,
+        x15,
+        x21,
+        y17,
+        y18,
+        battOutBlendColor,
+        svgRetArray,
+        svgScaleX,
+      );
+    }
+
     if (this._batteryInTotal() > 0) {
       svgRetArray.push(
         renderRect(
@@ -2133,7 +2172,6 @@ export class ElecSankey extends LitElement {
       );
     }
 
-    const batteryRoutes: { [id: string]: ElecRoutePair } = this.batteryRoutes;
     const divHeight = ICON_SIZE_PX + TEXT_PADDING + FONT_SIZE_PX * 2;
 
     let xA: number = x21;
@@ -2145,7 +2183,6 @@ export class ElecSankey extends LitElement {
     // When snapping, split the battery bar's (whole-pixel) widths between the
     // batteries so they add up exactly; rounding each battery separately can
     // leave a stray pixel-wide strip running down the bar.
-    const battKeys = Object.keys(batteryRoutes);
     const inWidths = this._snapUnit
       ? this._splitWidth(
           battKeys.map((k) => Math.max(0, batteryRoutes[k].in.rate || 0)),
@@ -2290,7 +2327,112 @@ export class ElecSankey extends LitElement {
       ${svgRetArray}
       ${svgRetArray2}
       `,
-      yA - gap + curvePadTemp + divHeight / 2,
+      yA - gap + curvePadTemp + divHeight / 2 + BATTERY_LABEL_BOTTOM_MARGIN,
+      nothing,
+    ];
+  }
+
+  /**
+   * A single battery needs no fan-out, so instead of curving out to the side
+   * (the "C" shape used for several batteries), its flows carry straight on
+   * down the battery bar to the battery, which sits below it. This mirrors
+   * the generation flows coming straight down from the top, and its label
+   * is laid out like theirs: centred on the flows, values below the icon.
+   *
+   * The bar is charging (x17..x15, into the battery: an arrow head pointing
+   * down) beside discharging (x15..x21, out of the battery: a source notch,
+   * as on the generation flows).
+   */
+  private _renderSingleBattery(
+    batt: ElecRoutePair,
+    x17: number,
+    x15: number,
+    x21: number,
+    y17: number,
+    y18: number,
+    battOutBlendColor: string,
+    svgRetArray: Array<TemplateResult | symbol>,
+    svgScaleX: number,
+  ): [
+    Array<TemplateResult | symbol>,
+    TemplateResult | symbol,
+    number,
+    TemplateResult | symbol,
+  ] {
+    const yEnd = y18 + SINGLE_BATTERY_TERMINATOR_LENGTH;
+    const arrow = ARROW_HEAD_LENGTH;
+    if (x15 - x17 > 0) {
+      svgRetArray.push(
+        renderRect(
+          x17,
+          y18,
+          x15 - x17,
+          yEnd - arrow - y18 + this._overlap,
+          "battery-in",
+          battOutBlendColor,
+        ),
+        svg`
+        <polygon points="${x17},${yEnd - arrow}
+        ${x15},${yEnd - arrow}
+        ${(x17 + x15) / 2},${yEnd}"
+        style="fill:${battOutBlendColor}" />`,
+      );
+    }
+    if (x21 - x15 > 0) {
+      svgRetArray.push(
+        renderRect(
+          x15,
+          y17 - this._overlap,
+          x21 - x15,
+          yEnd - y17 + this._overlap,
+          "battery",
+          batt.color || null,
+        ),
+        svg`
+        <polygon points="${x15},${yEnd}
+        ${x21},${yEnd}
+        ${(x15 + x21) / 2},${yEnd - arrow}"
+        class="tint"/>`,
+      );
+    }
+
+    // Centre the label on the flows; with no flow at all, on where the bar
+    // would be.
+    const midX = x21 - x17 > 0 ? (x17 + x21) / 2 : x15;
+    const topValue =
+      batt.soc !== undefined
+        ? { value: batt.soc, unit: "%", id: batt.socId }
+        : undefined;
+    const divHeight =
+      ICON_SIZE_PX +
+      TEXT_PADDING +
+      FONT_SIZE_PX * (topValue ? 3 : 2) +
+      (batt.outline ? 8 : 0);
+    const div = html`<div
+      class="label elecroute-label-battery-vert"
+      style="left: ${(midX + this._lhsPad) * svgScaleX}px;
+        top: ${yEnd * svgScaleX + SINGLE_BATTERY_LABEL_GAP_PX}px;"
+    >
+      ${this._generateLabelDiv(
+        batt.in.id,
+        this._batteryIcon(batt),
+        "",
+        batt.out.rate,
+        batt.in.rate,
+        batt.out.rate > 0 ? battOutBlendColor : undefined,
+        batt.color,
+        "battery",
+        true,
+        topValue,
+        batt.outline,
+        true,
+      )}
+    </div>`;
+    return [
+      [],
+      svg`${svgRetArray}`,
+      yEnd + (SINGLE_BATTERY_LABEL_GAP_PX + divHeight) / svgScaleX,
+      div,
     ];
   }
 
@@ -2640,7 +2782,7 @@ export class ElecSankey extends LitElement {
       y2,
       gridOutBlendColor,
     );
-    const [batteriesFlowInOutDiv, battInOutBlendSvg, y22] =
+    const [batteriesFlowInOutDiv, battInOutBlendSvg, y22, batteryBottomDiv] =
       this.renderBatteriesInOutFlow(
         x1,
         x17,
@@ -2663,7 +2805,7 @@ export class ElecSankey extends LitElement {
       y4,
       toConsumersBlendColor,
     );
-    let ymax = Math.max(y4, y8, y22 + 30, minHeightPx / svgScaleX);
+    let ymax = Math.max(y4, y8, y22, minHeightPx / svgScaleX);
     if (this._snapUnit) {
       ymax = Math.ceil(ymax / this._snapUnit) * this._snapUnit;
     }
@@ -2702,6 +2844,7 @@ export class ElecSankey extends LitElement {
                 ${battToGridFlowSvg} ${battInOutBlendSvg}
               </svg>
             </div>
+            ${batteryBottomDiv}
             <div class="sankey-mid">
               <div class="layer-wrapper">
                 <div class="sankey-mid-svg" width="100%">
@@ -2786,6 +2929,7 @@ export class ElecSankey extends LitElement {
         justify-content: left;
       }
       .col2bottom {
+        position: relative;
         display: flex;
         justify-content: left;
       }
@@ -2902,6 +3046,20 @@ export class ElecSankey extends LitElement {
         min-width: 60px;
         padding-left: 6px;
         text-align: center;
+      }
+      /*
+       * A single battery's label sits below its bar, centred on it (the div
+       * is placed at the bar's centre), like the generation labels above.
+       */
+      .elecroute-label-battery-vert {
+        position: absolute;
+        display: flex;
+        transform: translateX(-50%);
+        text-align: center;
+        white-space: nowrap;
+      }
+      .elecroute-label-battery-vert > .label {
+        flex: 0 0 auto;
       }
       /*
        * Size the inner label to its content so the icon and value centre on
