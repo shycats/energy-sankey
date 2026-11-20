@@ -615,6 +615,23 @@ export class ElecSankey extends LitElement {
    */
   private _lhsPad: number = 0;
 
+  /**
+   * Canvas units per device pixel when snapping to the pixel grid, or 0 when
+   * not snapping. Snapping (only with maxRate, where the scale is known before
+   * layout) makes flow widths whole device pixels and starts the straight
+   * runs on pixel boundaries, so their edges are crisp and stacked flows add
+   * up exactly (two 10px flows make a 20px trunk, not a soft-edged 21px one).
+   * Set by _renderLayout().
+   */
+  private _snapUnit: number = 0;
+
+  /**
+   * How far (canvas units, 1 CSS pixel) adjoining pieces of a flow overlap
+   * along the flow, so antialiasing doesn't leave a faint seam where they
+   * meet. Set by _renderLayout().
+   */
+  private _overlap: number = 0;
+
   /** Unknown generation re-attributed to grid import (unknownSourceToGrid). */
   private _gridImportExtra: number = 0;
 
@@ -1045,7 +1062,78 @@ export class ElecSankey extends LitElement {
 
   private _rateToWidth(rate: number): number {
     const value = rate * this._rateToWidthMultplier;
+    if (this._snapUnit) {
+      // Whole device pixels, at least one.
+      return Math.max(1, Math.round(value / this._snapUnit)) * this._snapUnit;
+    }
     return value > 1 ? value : 1;
+  }
+
+  /**
+   * Splits `total` (canvas units) into widths proportional to `rates`. When
+   * snapping, the widths are whole device pixels (at least one for a nonzero
+   * rate) that still add up exactly to `total`, so a fan-out exactly fills
+   * the trunk it comes from. Otherwise returns plain proportional widths.
+   */
+  protected _splitWidth(rates: number[], total: number): number[] {
+    const sum = rates.reduce((a, r) => a + Math.max(0, r || 0), 0);
+    const raw = rates.map((r) =>
+      sum > 0 ? (Math.max(0, r || 0) / sum) * total : 0,
+    );
+    const unit = this._snapUnit;
+    if (!unit || total <= 0) {
+      return raw;
+    }
+    const totalUnits = Math.round(total / unit);
+    const units = raw.map((w, i) =>
+      rates[i] > 0 ? Math.max(1, Math.floor(w / unit)) : 0,
+    );
+    let diff = totalUnits - units.reduce((a, u) => a + u, 0);
+    // Hand out (or take back) the remaining pixels by largest remainder,
+    // never taking a nonzero flow below one pixel.
+    const order = raw
+      .map((w, i) => ({ i, rem: w / unit - Math.floor(w / unit) }))
+      .sort((a, b) => b.rem - a.rem);
+    for (let k = 0; diff > 0 && order.length; k++) {
+      const i = order[k % order.length].i;
+      if (rates[i] > 0) {
+        units[i]++;
+        diff--;
+      }
+    }
+    const bySize = raw.map((w, i) => ({ i, w })).sort((a, b) => b.w - a.w);
+    for (let k = 0; diff < 0 && k < bySize.length * 4; k++) {
+      const i = bySize[k % bySize.length].i;
+      if (units[i] > 1) {
+        units[i]--;
+        diff++;
+      }
+    }
+    return units.map((u) => u * unit);
+  }
+
+  /**
+   * Snaps a y coordinate (canvas units) to the device pixel grid. Browsers
+   * paint each SVG on whole device pixels, so its own origin is on the grid.
+   */
+  protected _snapY(y: number): number {
+    const unit = this._snapUnit;
+    if (!unit) {
+      return y;
+    }
+    return Math.round(y / unit) * unit;
+  }
+
+  /**
+   * Snaps an x coordinate on the left-hand canvas to the device pixel grid.
+   * `pad` is the blank canvas left of x=0 (see _lhsPad).
+   */
+  protected _snapX(x: number, pad: number): number {
+    const unit = this._snapUnit;
+    if (!unit) {
+      return x;
+    }
+    return Math.round((x + pad) / unit) * unit - pad;
   }
 
   private _generationInFlowWidth(): number {
@@ -1240,6 +1328,15 @@ export class ElecSankey extends LitElement {
       routes.phantom = this._phantomGenerationInRoute;
       phantomRate = this._phantomGenerationInRoute.rate;
     }
+    // When snapping, split the trunk's (whole-pixel) width between the
+    // sources so the fan-in fills it exactly.
+    const routeKeys = Object.keys(routes);
+    const fanInWidths = this._snapUnit
+      ? this._splitWidth(
+          routeKeys.map((k) => routes[k].rate || 0),
+          x16 - x0,
+        )
+      : undefined;
     let i = 0;
     // eslint-disable-next-line guard-for-in
     for (const key in routes) {
@@ -1254,7 +1351,9 @@ export class ElecSankey extends LitElement {
         // Most of the time, if the rate is zero, we don't want to draw it.
         // Exception is if we have a >0 phantom source.
         if (rate || phantomRate > 0) {
-          width = this._rateToWidth(rate);
+          width = fanInWidths
+            ? fanInWidths[routeKeys.indexOf(key)]
+            : this._rateToWidth(rate);
           // The unknown source has its own colour, so fade it into the
           // generation colour as it joins the generation trunk, rather than
           // switching colour abruptly at the end of the terminator block.
@@ -1345,9 +1444,9 @@ export class ElecSankey extends LitElement {
       genToConsWidth > 0
         ? renderFlowByCorners(
             x16,
-            y0 - PAD_ANTIALIAS,
+            y0 - this._overlap,
             x15,
-            y0 - PAD_ANTIALIAS,
+            y0 - this._overlap,
             x1,
             y1,
             x1,
@@ -1374,11 +1473,13 @@ export class ElecSankey extends LitElement {
     if (width === 0) {
       return svg``;
     }
+    // Both pieces overlap their neighbours (the generation fan-in above, the
+    // curve and the grid arrow) to avoid antialiasing seams.
     const generatedFlowPath = renderFlowByCorners(
       x0 + width,
-      y0,
+      y0 - this._overlap,
       x0,
-      y0,
+      y0 - this._overlap,
       x11,
       y10 + width,
       x11,
@@ -1391,7 +1492,7 @@ export class ElecSankey extends LitElement {
     ${renderRect(
       arrow_head_length,
       y10,
-      x11 - arrow_head_length,
+      x11 - arrow_head_length + this._overlap,
       width,
       "generation",
     )}
@@ -1413,19 +1514,16 @@ export class ElecSankey extends LitElement {
     // extended through the padding to reach it.
     const xArrow = x10 - this._lhsPad;
     const fill = color ? `fill:${color};fill-opacity:1` : ``;
+    // The rect also overlaps the blends it joins, to avoid a seam.
     return svg`
-    ${
-      this._lhsPad > 0
-        ? svg`<rect
-          class="grid-out-arrow"
-          x="${xArrow}"
-          y="${y10}"
-          width="${this._lhsPad + PAD_ANTIALIAS}"
-          height="${y2 - y10}"
-          style="${fill}"
-        />`
-        : nothing
-    }
+    <rect
+      class="grid-out-arrow"
+      x="${xArrow}"
+      y="${y10}"
+      width="${this._lhsPad + this._overlap}"
+      height="${y2 - y10}"
+      style="${fill}"
+    />
     <polygon
       class="grid-out-arrow"
       points="${xArrow},${y10}
@@ -1445,12 +1543,13 @@ export class ElecSankey extends LitElement {
       return nothing;
     }
 
+    // Overlaps the generation fan-in above and the blend below.
     return svg`
     <rect
       class="generation"
       x="${x14}"
-      y="${y0}"
-      height="${y17 - y0}"
+      y="${y0 - this._overlap}"
+      height="${y17 - y0 + 2 * this._overlap}"
       width="${x15 - x14}"
     />
     `;
@@ -1509,7 +1608,7 @@ export class ElecSankey extends LitElement {
       x="${-this._lhsPad}"
       y="${y2}"
       height="${in_width}"
-      width="${arrow_head_length + this._lhsPad}"
+      width="${arrow_head_length + this._lhsPad + this._overlap}"
     />
     <polygon points="${-this._lhsPad},${y2}
     ${-this._lhsPad},${y2 + in_width}
@@ -1602,9 +1701,9 @@ export class ElecSankey extends LitElement {
       return nothing;
     }
     return renderBlendRect(
-      x11,
+      x11 + this._overlap,
       y11,
-      x11,
+      x11 + this._overlap,
       y10,
       x10,
       y11,
@@ -1627,9 +1726,9 @@ export class ElecSankey extends LitElement {
       return nothing;
     }
     return renderBlendRect(
-      x11,
+      x11 + this._overlap,
       y2,
-      x11,
+      x11 + this._overlap,
       y11,
       x10,
       y2,
@@ -1773,6 +1872,7 @@ export class ElecSankey extends LitElement {
     color: string,
     svgScaleX: number,
     count: number = 1,
+    widthOverride?: number,
   ): [
     TemplateResult,
     TemplateResult,
@@ -1783,7 +1883,7 @@ export class ElecSankey extends LitElement {
   ] {
     // A consumer's own colour replaces the blended source colour.
     color = consumer.color || color;
-    const width = this._rateToWidth(consumer.rate);
+    const width = widthOverride ?? this._rateToWidth(consumer.rate);
     const xEnd = topRightX;
     const yEnd = topRightY + width / 2;
     const svgFlow = renderFlowByCorners(
@@ -1925,6 +2025,19 @@ export class ElecSankey extends LitElement {
     let svgExtra: TemplateResult;
     let svgArrow: TemplateResult;
 
+    // When snapping, split the trunk's (whole-pixel) width between the
+    // consumers so the fan-out fills it exactly.
+    const consumerKeys = Object.keys(consumerRoutes);
+    const fanOutWidths = this._snapUnit
+      ? this._splitWidth(
+          [
+            ...consumerKeys.map((k) => consumerRoutes[k].rate || 0),
+            this._untrackedConsumerRoute.rate || 0,
+          ],
+          y4 - y1,
+        )
+      : undefined;
+
     for (const key in consumerRoutes) {
       if (Object.prototype.hasOwnProperty.call(consumerRoutes, key)) {
         [divRow, svgFlow, svgExtra, svgArrow, yLeft, yRight] =
@@ -1936,8 +2049,10 @@ export class ElecSankey extends LitElement {
             consumerRoutes[key],
             color,
             svgScaleX,
-            i++,
+            i,
+            fanOutWidths?.[i],
           );
+        i++;
         divRetArray.push(divRow);
         svgFlowArray.push(svgFlow);
         svgExtraArray.push(svgExtra);
@@ -1955,8 +2070,10 @@ export class ElecSankey extends LitElement {
         this._untrackedConsumerRoute,
         color,
         svgScaleX,
-        i++,
+        i,
+        fanOutWidths?.[i],
       );
+    i++;
     divRetArray.push(divRow);
     svgFlowArray.push(svgFlow);
     svgExtraArray.push(svgExtra);
@@ -1997,13 +2114,13 @@ export class ElecSankey extends LitElement {
       svgRetArray.push(
         renderBlendRect(
           x14,
-          y17,
+          y17 - this._overlap,
           x17,
-          y17,
+          y17 - this._overlap,
           x14,
-          y18,
+          y18 + this._overlap,
           x17,
-          y18,
+          y18 + this._overlap,
           gridColor,
           battOutBlendColor,
           "grid-to-batt-blend",
@@ -2014,13 +2131,13 @@ export class ElecSankey extends LitElement {
       svgRetArray.push(
         renderBlendRect(
           x15,
-          y17,
+          y17 - this._overlap,
           x14,
-          y17,
+          y17 - this._overlap,
           x15,
-          y18,
+          y18 + this._overlap,
           x14,
-          y18,
+          y18 + this._overlap,
           genColor,
           battOutBlendColor,
           "gen-to-batt-blend",
@@ -2028,7 +2145,15 @@ export class ElecSankey extends LitElement {
       );
     }
     if (this._batteryInTotal() > 0) {
-      svgRetArray.push(renderRect(x15, y17, x21 - x15, y18 - y17, "battery"));
+      svgRetArray.push(
+        renderRect(
+          x15,
+          y17 - this._overlap,
+          x21 - x15,
+          y18 - y17 + 2 * this._overlap,
+          "battery",
+        ),
+      );
     }
 
     const batteryRoutes: { [id: string]: ElecRoutePair } = this.batteryRoutes;
@@ -2040,6 +2165,23 @@ export class ElecSankey extends LitElement {
     let xB: number = x15;
     let count = 0;
 
+    // When snapping, split the battery bar's (whole-pixel) widths between the
+    // batteries so they add up exactly; rounding each battery separately can
+    // leave a stray pixel-wide strip running down the bar.
+    const battKeys = Object.keys(batteryRoutes);
+    const inWidths = this._snapUnit
+      ? this._splitWidth(
+          battKeys.map((k) => Math.max(0, batteryRoutes[k].in.rate || 0)),
+          x21 - x15,
+        )
+      : undefined;
+    const outWidths = this._snapUnit
+      ? this._splitWidth(
+          battKeys.map((k) => Math.max(0, batteryRoutes[k].out.rate || 0)),
+          x15 - x17,
+        )
+      : undefined;
+
     let curvePadTemp = 0;
     for (const key in batteryRoutes) {
       if (!Object.prototype.hasOwnProperty.call(batteryRoutes, key)) {
@@ -2047,8 +2189,17 @@ export class ElecSankey extends LitElement {
         continue;
       }
       const batt = batteryRoutes[key];
-      const widthOut = batt.out.rate > 0 ? this._rateToWidth(batt.out.rate) : 0;
-      const widthIn = batt.in.rate > 0 ? this._rateToWidth(batt.in.rate) : 0;
+      const idx = battKeys.indexOf(key);
+      const widthOut = outWidths
+        ? outWidths[idx]
+        : batt.out.rate > 0
+          ? this._rateToWidth(batt.out.rate)
+          : 0;
+      const widthIn = inWidths
+        ? inWidths[idx]
+        : batt.in.rate > 0
+          ? this._rateToWidth(batt.in.rate)
+          : 0;
       curvePadTemp = x1 - x21;
       if (widthIn > 0) {
         svgRetArray.push(
@@ -2076,7 +2227,13 @@ export class ElecSankey extends LitElement {
       }
       if (xA - x15 > 1) {
         svgRetArray.push(
-          renderRect(x15, yA, xA - x15, gap + widthOut + widthIn, "battery"),
+          renderRect(
+            x15,
+            yA,
+            xA - x15,
+            gap + widthOut + widthIn + this._overlap,
+            "battery",
+          ),
         );
       }
       if (widthOut > 0) {
@@ -2111,7 +2268,7 @@ export class ElecSankey extends LitElement {
             x17,
             yA,
             xB - x17,
-            gap + widthOut + widthIn,
+            gap + widthOut + widthIn + this._overlap,
             "battery-in",
             battOutBlendColor,
           ),
@@ -2267,22 +2424,29 @@ export class ElecSankey extends LitElement {
       ) * PAD_MULTIPLIER;
     const midX = ARROW_HEAD_LENGTH + GRID_BLEND_LENGTH + width / 2 + padX;
 
-    const x0 =
+    const x1: number = midX + width / 2 + padX;
+    // Start the vertical (generation) and horizontal (trunk) runs on pixel
+    // boundaries; the flows' widths are whole pixels, so every straight edge
+    // then is. The left-hand canvas is padded to the reference width.
+    const lhsPad = Math.max(0, LHS_REFERENCE_CANVAS_WIDTH - x1);
+    const x0 = this._snapX(
       ARROW_HEAD_LENGTH + GRID_BLEND_LENGTH + widthGenToGrid >
-      widthGridToBatteries
+        widthGridToBatteries
         ? midX - width / 2
-        : midX - width / 2 + widthGridToBatteries - widthGenToGrid;
+        : midX - width / 2 + widthGridToBatteries - widthGenToGrid,
+      lhsPad,
+    );
     const y0 = TERMINATOR_BLOCK_LENGTH;
 
-    const y1 =
+    const y1 = this._snapY(
       TERMINATOR_BLOCK_LENGTH +
-      Math.max(
-        padX,
-        widthGenToConsumers,
-        padX + widthGenToGrid + widthBatteriesToGrid - widthGenToConsumers,
-        widthGenToGrid * 2 + widthBatteriesToGrid - widthGenToConsumers,
-      );
-    const x1: number = midX + width / 2 + padX;
+        Math.max(
+          padX,
+          widthGenToConsumers,
+          padX + widthGenToGrid + widthBatteriesToGrid - widthGenToConsumers,
+          widthGenToGrid * 2 + widthBatteriesToGrid - widthGenToConsumers,
+        ),
+    );
 
     const y2: number = y1 + widthGenToConsumers;
 
@@ -2338,6 +2502,20 @@ export class ElecSankey extends LitElement {
    * (blank space at the bottom) up to at least that height.
    */
   private _renderLayout(minHeightPx: number = 0): [TemplateResult, number] {
+    // Snap to device pixels when the scale is fixed (maxRate) and known up
+    // front: the reference canvas width fills SVG_LHS_VISIBLE_WIDTH.
+    const hasMaxRate = !!(this.maxRate && this.maxRate > 0);
+    const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+    this._snapUnit = hasMaxRate
+      ? LHS_REFERENCE_CANVAS_WIDTH / SVG_LHS_VISIBLE_WIDTH / dpr
+      : 0;
+    let layout = this._calc_xy();
+    if (this._snapUnit && layout[2] > LHS_REFERENCE_CANVAS_WIDTH) {
+      // The flows need more than the reference width, so the canvas will be
+      // squeezed and the pixel grid isn't known in advance: don't snap.
+      this._snapUnit = 0;
+      layout = this._calc_xy();
+    }
     const [
       x0,
       y0,
@@ -2349,7 +2527,7 @@ export class ElecSankey extends LitElement {
       gridOutBlendColor,
       toConsumersBlendColor,
       toBatteriesBlendColor, // TODO refactor this
-    ] = this._calc_xy();
+    ] = layout;
 
     // The left-hand canvas is scaled to fit SVG_LHS_VISIBLE_WIDTH. Without
     // maxRate it is always stretched or squeezed to exactly that width. Its
@@ -2359,12 +2537,12 @@ export class ElecSankey extends LitElement {
     // (unless the flows need more), and the diagram sits at its right, with
     // the grid flows extended through the blank part on the left. The
     // on-screen width stays constant, so the columns don't move around.
-    const svgCanvasWidth =
-      this.maxRate && this.maxRate > 0
-        ? Math.max(x1, LHS_REFERENCE_CANVAS_WIDTH)
-        : x1;
+    const svgCanvasWidth = hasMaxRate
+      ? Math.max(x1, LHS_REFERENCE_CANVAS_WIDTH)
+      : x1;
     this._lhsPad = svgCanvasWidth - x1;
     const svgScaleX = SVG_LHS_VISIBLE_WIDTH / svgCanvasWidth;
+    this._overlap = 1 / svgScaleX;
     const svgVisibleWidth = SVG_LHS_VISIBLE_WIDTH;
     const x10 = ARROW_HEAD_LENGTH / svgScaleX;
     const x11 = x10 + GRID_BLEND_LENGTH;
@@ -2508,7 +2686,10 @@ export class ElecSankey extends LitElement {
       y4,
       toConsumersBlendColor,
     );
-    const ymax = Math.max(y4, y8, y22 + 30, minHeightPx / svgScaleX);
+    let ymax = Math.max(y4, y8, y22 + 30, minHeightPx / svgScaleX);
+    if (this._snapUnit) {
+      ymax = Math.ceil(ymax / this._snapUnit) * this._snapUnit;
+    }
     const arrowBoxWidth = ARROW_HEAD_LENGTH + this._getExtrasLength();
     // Consumer labels with an icon need extra room for it beside the text.
     const hasConsumerIcons =
@@ -2690,6 +2871,18 @@ export class ElecSankey extends LitElement {
         flex: 1;
         flex-grow: 0;
         min-width: ${this.extrasLength + ARROW_HEAD_LENGTH}px;
+      }
+      /*
+       * The diagram is drawn as several side-by-side SVGs. Where two meet at
+       * a fractional pixel, antialiasing on both sides leaves a faint seam,
+       * so each later SVG overlaps the previous one by a pixel (its flows
+       * start in the colour the previous one ends in).
+       */
+      .sankey-mid-svg > svg,
+      .sankey-right > svg,
+      .sankey-far-right > svg {
+        margin-left: -1px;
+        width: calc(100% + 1px);
       }
       /*
        * Consumer label column. Fixed width, so it neither wastes spare card
