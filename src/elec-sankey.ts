@@ -1555,6 +1555,7 @@ export class ElecSankey extends LitElement {
     y13: number,
     y10: number,
     svgScaleX: number,
+    gridOutBlendColor?: string,
   ): [TemplateResult | symbol, TemplateResult | symbol] {
     const gridRoute =
       this.gridInRoute ||
@@ -1588,7 +1589,9 @@ export class ElecSankey extends LitElement {
         rateA,
         rateB,
         undefined,
-        undefined,
+        // The export value takes the colour of the flow arriving at the grid
+        // (generation and battery export blended), like the export arrow.
+        this._gridOutFlowWidth() > 0 ? gridOutBlendColor : undefined,
         "grid",
         hasGridExport,
         gridRoute.topValue,
@@ -2720,6 +2723,7 @@ export class ElecSankey extends LitElement {
       y13,
       y10,
       svgScaleX,
+      gridOutBlendColor,
     );
     const gridToConsumersFlowSvg = this.renderGridToConsumersFlow(
       x10,
